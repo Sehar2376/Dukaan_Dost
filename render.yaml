@@ -1,0 +1,46 @@
+# Render "Blueprint": lets Render set up the backend from this file.
+# Render dashboard -> New + -> Blueprint -> pick this repo. Then fill the secret values it asks for.
+# Secrets marked `sync: false` are typed in the Render dashboard, never written here.
+services:
+  - type: web
+    name: dukaan-dost-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: NEBIUS_API_KEY
+        sync: false
+      - key: NEMOTRON_NANO_MODEL
+        value: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
+      - key: NEMOTRON_SUPER_MODEL
+        value: nvidia/nemotron-3-super-120b-a12b
+      - key: NEMOTRON_ULTRA_MODEL
+        value: nvidia/Nemotron-3-Ultra-550b-a55b
+      - key: MOCK_AI
+        value: "0"
+      # Add the Firebase key as a Secret File named firebase-key.json (Environment -> Secret Files)
+      - key: FIREBASE_CREDENTIALS
+        value: /etc/secrets/firebase-key.json
+      - key: DAILY_MESSAGE_LIMIT
+        value: "40"
+      - key: TOTAL_DAILY_LIMIT
+        value: "500"
+      - key: DAILY_BUDGET_USD
+        value: "1.50"
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: OWNER_WHATSAPP
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: TAVILY_DAILY_LIMIT
+        value: "30"

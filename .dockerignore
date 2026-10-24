@@ -1,0 +1,12 @@
+# Keep secrets and junk out of the image
+**/.env
+**/*.env
+!**/.env.example
+**/firebase-key*.json
+**/venv
+**/.venv
+**/__pycache__
+**/.pytest_cache
+frontend
+.git
+*.log
