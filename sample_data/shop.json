@@ -1,0 +1,41 @@
+{
+  "_note": "DEMO DATA ONLY. Person B: edit/extend this on Day 2 (target 10-15 products).",
+  "shop": {
+    "name": "Sweet Crumbs Bakery",
+    "city": "Karachi",
+    "timings": "Daily 10am - 9pm (Friday 3pm - 9pm)",
+    "delivery_areas": ["Gulshan-e-Iqbal", "Gulistan-e-Johar", "DHA", "Clifton", "PECHS"],
+    "delivery_fee": 200,
+    "min_order_notice": "Cakes need 1 day advance notice",
+    "payment_methods": ["Cash on delivery", "JazzCash", "Easypaisa", "Bank transfer"],
+    "policies": "No refunds on custom cakes. Orders can be changed up to 12 hours before delivery.",
+    "large_order_threshold": 8000,
+    "opening_hours": {
+      "mon": ["10:00", "21:00"], "tue": ["10:00", "21:00"], "wed": ["10:00", "21:00"],
+      "thu": ["10:00", "21:00"], "fri": ["15:00", "21:00"], "sat": ["10:00", "21:00"],
+      "sun": ["10:00", "21:00"]
+    },
+    "min_notice_hours": 2,
+    "advance_notice_hours": {"cake": 24, "cheesecake": 24}
+  },
+  "products": [
+    {"id": "p1", "name": "Chocolate Fudge Cake 1kg", "category": "cake", "price": 2200, "cost_price": 1400, "max_discount_percent": 10, "in_stock": true},
+    {"id": "p2", "name": "Chocolate Fudge Cake 2kg", "category": "cake", "price": 4400, "cost_price": 2750, "max_discount_percent": 10, "in_stock": true},
+    {"id": "p3", "name": "Red Velvet Cake 1kg", "category": "cake", "price": 2600, "cost_price": 1650, "max_discount_percent": 8, "in_stock": true},
+    {"id": "p4", "name": "Pineapple Cake 1kg", "category": "cake", "price": 1800, "cost_price": 1100, "max_discount_percent": 10, "in_stock": true},
+    {"id": "p5", "name": "Lotus Cheesecake (whole)", "category": "cheesecake", "price": 3200, "cost_price": 2100, "max_discount_percent": 5, "in_stock": false},
+    {"id": "p6", "name": "Fudge Brownies (box of 6)", "category": "brownies", "price": 900, "cost_price": 520, "max_discount_percent": 10, "in_stock": true},
+    {"id": "p7", "name": "Chocolate Chip Cookies (box of 12)", "category": "cookies", "price": 750, "cost_price": 400, "max_discount_percent": 15, "in_stock": true},
+    {"id": "p8", "name": "Cupcakes (box of 6)", "category": "cupcakes", "price": 1200, "cost_price": 700, "max_discount_percent": 10, "in_stock": true}
+  ],
+  "faqs": [
+    {"question": "Delivery charges?", "answer": "Delivery is Rs 200 in Gulshan-e-Iqbal, Gulistan-e-Johar, DHA, Clifton and PECHS."},
+    {"question": "Which areas do you deliver to?", "answer": "Gulshan-e-Iqbal, Gulistan-e-Johar, DHA, Clifton and PECHS."},
+    {"question": "Timings?", "answer": "Daily 10am to 9pm. On Friday 3pm to 9pm."},
+    {"question": "How early should I order a cake?", "answer": "Please order cakes at least 1 day in advance."},
+    {"question": "Payment methods?", "answer": "Cash on delivery, JazzCash, Easypaisa or bank transfer."},
+    {"question": "Can you write a name on the cake?", "answer": "Yes, name or short message on the cake is free."},
+    {"question": "Do you make eggless cakes?", "answer": "Yes, eggless is available for Rs 300 extra with 2 days notice."},
+    {"question": "Refund policy?", "answer": "No refunds on custom cakes. Orders can be changed up to 12 hours before delivery."}
+  ]
+}
