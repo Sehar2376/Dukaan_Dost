@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/* Brand colours taken from the Dukaan Dost logo */
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --color-brand-50: #eef4fc;
+  --color-brand-100: #dce8f8;
+  --color-brand-200: #bdd4f2;
+  --color-brand-300: #90b7e8;
+  --color-brand-400: #5f96db;
+  --color-brand-500: #3f7acd;
+  --color-brand-600: #2d63b6;
+  --color-brand-700: #254f93;
+  --color-brand-800: #1f4276;
+  --color-brand-900: #18325a;
+  --color-brand-950: #0f2140;
+  --color-canvas: #f5f7fb;
+}
+
+html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { background: var(--color-canvas); color: #0f172a; }
+
+/* Chat background: soft dotted paper, like a messaging app but in brand tones */
+.chat-surface {
+  background-color: #f3f6fb;
+  background-image: radial-gradient(#dfe6f1 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Thin, quiet scrollbars */
+.scroll-thin { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+
+@keyframes dd-bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .5 } 40% { transform: translateY(-3px); opacity: 1 } }
+.typing-dot { animation: dd-bounce 1.2s infinite ease-in-out; }
+.typing-dot:nth-child(2) { animation-delay: .15s; }
+.typing-dot:nth-child(3) { animation-delay: .3s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

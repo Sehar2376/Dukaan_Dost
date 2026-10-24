@@ -1,0 +1,25 @@
+{
+  "name": "dukaan-dost-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^3.10.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "tailwindcss": "^4.1.0",
+    "vite": "^6.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
