@@ -33,14 +33,14 @@ disappears on the deployed site, which uses HTTPS.
 
 | Setting | Where | Value |
 |---|---|---|
-| `VITE_API_URL` | `frontend/.env` (laptop) or Vercel → Environment Variables | `http://localhost:8000` or your Render link |
+| `VITE_API_URL` | `frontend/.env` (laptop) or Vercel → Environment Variables | `http://localhost:8000` or your Vercel backend link |
 | Footer email, phone, city, GitHub link | `src/site.js` | Edit the values; leave `phone` empty to hide it |
 
 ## Deploy on Vercel
 
 1. vercel.com → **Add New → Project** → import the GitHub repo.
 2. **Root Directory**: `frontend` · Framework: **Vite**.
-3. **Environment Variables**: `VITE_API_URL` = your Render backend link.
+3. **Environment Variables**: `VITE_API_URL` = your Vercel backend link.
 4. **Deploy**. The Vercel link is your demo URL.
 
 ## Files
