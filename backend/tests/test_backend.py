@@ -390,3 +390,43 @@ def test_short_answer_mid_order_goes_back_to_agent():
     assert main._mid_order(conv, "greeting") is True
     assert main._mid_order(conv, "abuse") is False
     assert main._mid_order({}, "other") is False
+
+
+def test_faq_gets_recent_chat(monkeypatch):
+    """Follow-ups like 'kya?' reach Nano together with the last few chat lines."""
+    import main
+    seen = {}
+
+    def fake_faq(message, language, shop_info, name, city, history=""):
+        seen["history"] = history
+        return "Ji, aap ne 1kg chocolate cake ka poocha tha."
+
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "over_budget", lambda: False)
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})
+    monkeypatch.setattr(ai, "answer_faq", fake_faq)
+    phone = "03009990002"
+    db.add_message(phone, "customer", "1kg chocolate cake kitne ka hai?")
+    db.add_message(phone, "assistant", "Rs 2,200 hai ji.")
+    out = main.handle_message(phone, "kya?")
+    assert "chocolate cake" in seen["history"] and "kya?" not in seen["history"]
+    assert out.needs_owner is False
+
+
+def test_bargain_without_check_discount_is_nudged(monkeypatch):
+    """If Super refuses a discount without calling check_discount, it is asked to call it."""
+    seen = []
+
+    def fake(model, messages, tl):
+        seen.append(messages[-1]["content"])
+        if len(seen) == 1:
+            return NS(tool_calls=None, content="Discount nahi mil sakta.")
+        if len(seen) == 2:
+            return NS(tool_calls=[_call("check_discount", {"product_id": "p1"}, 1)], content="")
+        return NS(tool_calls=None, content="Aap ke liye 5% kam: Rs 2,090.")
+
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", fake)
+    out = agent.run_agent("03009990003", "roman_urdu", "bargain")
+    assert "check_discount" in out["tools_used"] and out["reply"].startswith("Aap ke liye")
+    assert "check_discount now" in seen[1]

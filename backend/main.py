@@ -135,7 +135,7 @@ def _handle(phone: str, message: str) -> ChatOut:
     try:
         if info["intent"] in AGENT_INTENTS or conv.get("draft_order") or _mid_order(conv, info["intent"]):
             route.append("super")
-            result = agent.run_agent(phone, info["language"])  # Nemotron Super + tools
+            result = agent.run_agent(phone, info["language"], info["intent"])  # Nemotron Super + tools
             c = db.get_conversation(phone)
             c["agent_at"] = db.now_iso()  # remember: this customer is in the middle of an order/booking
             db.save_conversation(phone, c)

@@ -26,7 +26,8 @@ Intent rules:
 - "abuse": clear insults, swearing, harassment or obvious spam, with no real request. Casual phrases like
   "chor de" (leave it), "rehne do", "jaane do" or impatience ("I am waiting", "jaldi karo") are NOT abuse.
 - "other": anything else.
-If a message has several intents, choose the one that needs action: complaint > order > booking > bargain > faq > greeting. A real complaint with rude words is "complaint", not "abuse".
+If a message has several intents, choose the one that needs action: complaint > order > booking > bargain > faq > greeting. A real complaint with rude words is "complaint", not "abuse". Threats of a bad review or complaining
+are "complaint" (urgent), not "abuse".
 
 urgent = true when the customer is angry, mentions a problem with an order already delivered or late, uses words
 like "abhi", "urgent", "jaldi", "foran" about a problem, or threatens bad reviews. Otherwise false.
@@ -39,6 +40,8 @@ Examples:
 "Mera order 2 ghantay late hai, ye kya tareeqa hai!!" -> {"language":"roman_urdu","intent":"complaint","urgent":true}
 "Tum log bakwas ho, ullu ke patthay" -> {"language":"roman_urdu","intent":"abuse","urgent":false}
 "Chor de" -> {"language":"roman_urdu","intent":"other","urgent":false}
+"Mein bad review dal dunga" -> {"language":"roman_urdu","intent":"complaint","urgent":true}
+"Mera budget 3000 hai" -> {"language":"roman_urdu","intent":"bargain","urgent":false}
 "Rehne do, baad mein bataungi" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "Sham 7 baje" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "G" -> {"language":"roman_urdu","intent":"other","urgent":false}
