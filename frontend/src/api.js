@@ -16,7 +16,7 @@ export async function api(path, { method = "GET", body, params } = {}) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error(`Can't reach the backend at ${API_URL}. Is the server running (uvicorn main:app --reload)?`);
+      throw new Error("The server is waking up or busy. Please try again in a few seconds.");
   }
   let data = null;
   try {
