@@ -1,153 +1,232 @@
-# Dukaan Dost 🛍️
+<p align="center">
+  <img src="frontend/public/logo-full.png" alt="Dukaan Dost logo" width="260">
+</p>
 
-**An AI WhatsApp assistant for small Pakistani businesses — powered by NVIDIA Nemotron on Nebius Token Factory.**
+<h1 align="center">Dukaan Dost</h1>
 
-> Nebius x NVIDIA Global AI Hackathon · Track: **Best Apps and Agents** · License: MIT
+<p align="center">
+  <b>An AI shop assistant for small Pakistani businesses that sell on WhatsApp.</b><br>
+  Replies in Roman Urdu, Urdu or English · takes orders and bookings · bargains only within the owner's limits · flags fake cash-on-delivery orders before they ship.<br>
+  Powered by <b>NVIDIA Nemotron 3 (Nano, Super, Ultra)</b> on <b>Nebius Token Factory</b>.
+</p>
 
-Demo: _coming soon_ · Video: _coming soon_
+<p align="center">
+  <a href="https://dukaan-dost-sooty.vercel.app"><b>Live demo</b></a> ·
+  <a href="https://dukaandostapi.vercel.app/docs">API docs</a> ·
+  <a href="VIDEO-LINK">Demo video</a> ·
+  <a href="FEEDBACK.md">Feedback for Nebius and NVIDIA</a>
+</p>
+
+<p align="center">
+  Nebius x NVIDIA Global AI Hackathon · Track: <b>Best Apps and Agents</b> · License: MIT
+</p>
+
+<!-- Screenshots: on GitHub, edit this file, select a SHOT word and paste (Ctrl+V) a screenshot over it. -->
+| Customer chat (Roman Urdu + bargaining) | Owner dashboard | AI routing and cost |
+| --- | --- | --- |
+| SHOT-1 | SHOT-2 | SHOT-3 |
+
+---
+
+## Try it in 2 minutes
+
+1. Open the **[live demo](https://dukaan-dost-sooty.vercel.app)**.
+2. On **Overview**, click **Load sample shop**. This loads *Sweet Crumbs Bakery*: a made-up Karachi home bakery with 20 customers and about 3 months of orders, all labelled demo data.
+3. Open **Customer chat** and type as a customer:
+   - `Assalam o alaikum, 1kg chocolate cake kitne ka hai?`
+   - `Thora discount ho jaye? 2 cake lun gi`
+   - `Theek hai, order kar dein. Gulshan delivery`
+4. Open **Orders** as the owner: the new order is there with its cash-on-delivery risk level and the reasons.
+5. Open **Insights** for daily and monthly profit, and ask the AI advisor for this month's tips.
+
+> The backend runs on a free plan and may take a few seconds to wake up on the first request.
 
 ## The problem
-Millions of small Pakistani businesses (home bakers, boutiques, tailors, pharmacies) run entirely on WhatsApp.
-Owners answer the same questions all day, miss orders when busy, lose money on fake cash-on-delivery (COD) orders,
-and have no clear view of daily sales or profit.
+
+Millions of small businesses in Pakistan (home bakers, boutiques, tailors, pharmacies) run entirely on WhatsApp.
+The owner is also the cook, the tailor or the shopkeeper, so:
+
+- they answer the same questions about price, delivery and timing all day;
+- orders get missed while they are busy;
+- fake cash-on-delivery orders (wrong address, customer not answering) waste ingredients and delivery money;
+- they have no clear view of daily sales or profit.
+
+Customers write in a mix of Roman Urdu, Urdu and English, and they expect to bargain. A generic English chatbot doesn't fit.
 
 ## What Dukaan Dost does
-- Talks to customers in **Urdu, Roman Urdu or English** (and mixed) and replies in the same style
-- Answers FAQs, takes **orders and bookings**, **bargains within the owner's limits**
-- **Flags risky COD orders** with reasons before they ship
-- Remembers repeat customers, routes complaints and big orders to the owner
-- Gives the owner **daily and monthly sales and profit** summaries
-- **AI business advisor**: Nemotron 3 Ultra turns the month's numbers into 3-5 practical tips
-- **Market price check** (Tavily): "What do other shops charge for this?" — web search + Nemotron Super + Python comparison
-- **Nightly owner report**: a background job adds up the day and WhatsApps the owner (runs as a Nebius Serverless Job)
 
-## How we use NVIDIA Nemotron + Nebius Token Factory
-| Model (via Token Factory) | Used for | Why |
-|---|---|---|
-| Nemotron 3 Nano | Language + intent + urgency detection, FAQ replies, summaries | Fast and cheap for every message |
-| Nemotron 3 Super | Tool-calling agent for orders, bookings, bargaining; reading the owner's menu; reading prices out of Tavily search results | Stronger reasoning for multi-step tasks |
-| Nemotron 3 Ultra | Monthly AI business advisor (`GET /advice/monthly`), only when the owner asks; answer cached | Deep reasoning over the month's numbers; rare call, so cost stays tiny (~1 cent) |
+- **Understands how customers actually write.** Roman Urdu, Urdu script, English and mixed messages, and replies in the same style.
+- **Answers FAQs** from the shop's own data: prices, delivery areas, timings, payment.
+- **Takes orders and bookings** through a tool-calling agent.
+- **Bargains safely.** The model can only offer discounts that Python checks against the owner's limits, so a customer can't talk it into a bigger discount.
+- **Flags risky COD orders** with plain reasons, such as a vague address, a new customer, a large first order, or past cancellations.
+- **Hands off to the owner** for complaints, urgent or large orders, and questions it can't answer. The owner can take over a chat from the Inbox.
+- **Remembers repeat customers** and their addresses.
+- **Owner insights:** daily and monthly sales, profit and top products, plus monthly advice from Nemotron 3 Ultra.
+- **Market price check (Tavily):** "What do other shops charge for this?" Web search, then Nemotron Super reads the prices, then Python compares.
+- **5-minute setup:** the owner pastes their menu as plain text and Nemotron Super turns it into products and prices.
 
-Every customer message goes through the Token Factory API (OpenAI-compatible). Prices, discounts, totals and
-COD risk scores are always calculated **in code**, never by the model, so a customer can't trick the AI
-into a bigger discount.
+## How we use NVIDIA Nemotron and Nebius Token Factory
+
+All AI calls go through the **Nebius Token Factory** OpenAI-compatible API. We route each task to the smallest model that handles it well, so the app stays fast and the credits last.
+
+| Model (Token Factory) | Used for | Why this model |
+| --- | --- | --- |
+| **Nemotron 3 Nano** (30B-A3B) | Every message: language, intent and urgency detection; FAQ replies; short summaries | Fast and cheap enough to run on every message |
+| **Nemotron 3 Super** (120B-A12B) | Tool-calling agent for orders, bookings and bargaining (max 6 steps); reading a pasted menu; reading prices out of Tavily results | Reliable multi-step tool use |
+| **Nemotron 3 Ultra** (550B-A55B) | Monthly business advisor, only when the owner asks; the answer is cached | Deep reasoning over a month of numbers; rare call, so it costs about a cent |
+
+**What the model never does:** prices, totals, discounts and COD risk scores are always calculated in Python. The model decides *what* to do; code decides the numbers.
+
+**Cost controls built in:**
+- per-phone and whole-app daily message limits, and a daily AI budget in USD; no AI call is made once a limit is reached;
+- every call's tokens and estimated cost are counted (`GET /usage`, shown in **Settings → AI and usage**);
+- Ultra is called only on demand and cached;
+- a $0 **practice mode** (no key needed) uses the same tools with simple rules, for testing.
 
 ## Architecture
-```
-Customer (WhatsApp via Twilio / web chat) -> FastAPI
-  -> Nemotron Nano: language, intent, urgent
-       -> FAQ: answer from shop data
-       -> order / booking / bargain: Nemotron Super agent + tools
-  -> COD risk rules (Python) -> Firestore -> Owner dashboard (React)
 
-Owner: "What do others charge?" -> Tavily web search -> Nemotron Super reads prices -> Python compares
-Every night: daily_report.py (Nebius Serverless Job) -> Nano note -> owner's WhatsApp
-Monthly: numbers (Python) + market prices -> Nemotron Ultra -> 3-5 tips
 ```
+Customer (web chat, or WhatsApp via Twilio)
+   │
+   ▼
+FastAPI backend ──► Nemotron 3 Nano: language + intent + urgency
+   │                    ├─ FAQ ──────────────► answer from shop data
+   │                    └─ order / booking / bargain ──► Nemotron 3 Super agent + tools
+   │                                                        (get_products, check_discount,
+   │                                                         preview/confirm_order, create_booking, flag_owner)
+   ├─ COD risk rules (Python)
+   ├─ Database: Firebase Firestore (or in-memory)
+   ▼
+Owner dashboard (React + Vite): Overview · Customer chat · Inbox · Orders · Customers · Insights · Settings
+
+Owner asks "what do others charge?" ──► Tavily search ──► Nemotron Super reads prices ──► Python compares
+Owner asks for monthly advice ──► numbers (Python) + market prices ──► Nemotron 3 Ultra ──► 3–5 tips
+Every night ──► daily_report.py ──► Nano writes a short note ──► owner (dashboard / WhatsApp)
+```
+
+## Deployment (live)
+
+| Part | Where | Link |
+| --- | --- | --- |
+| Frontend (React + Vite) | Vercel, root directory `frontend` | https://dukaan-dost-sooty.vercel.app |
+| Backend (FastAPI) | Vercel (Python), entry point `app.py` at the repo root | https://dukaandostapi.vercel.app |
+| AI models | Nebius Token Factory | Nemotron 3 Nano, Super, Ultra |
+
+**Deploy your own copy (free, no card):**
+1. **Backend:** on Vercel, import this repo with Root Directory `./` (Vercel detects FastAPI from `app.py`). Add the environment variables from `.env.example`; at minimum `NEBIUS_API_KEY`.
+2. **Frontend:** import the same repo again with Root Directory `frontend` (Vite), and add `VITE_API_URL` = your backend URL.
+3. **Firebase (recommended on Vercel):** the backend restarts often there, so in-memory data doesn't last. Set `FIREBASE_CREDENTIALS` to the full JSON text of a Firebase service-account key. The code accepts either a file path or the JSON text.
+
+`render.yaml` and the `Dockerfile` are also included for Render or Nebius Serverless Endpoints and Jobs.
 
 ## Run it locally
+
+**Backend** (Python 3.12):
 ```bash
 git clone https://github.com/Sehar2376/Dukaan_Dost.git
 cd Dukaan_Dost/backend
 python -m venv venv
-venv\Scripts\activate          # Windows   (Mac/Linux: source venv/bin/activate)
+venv\Scripts\activate            # Mac/Linux: source venv/bin/activate
 pip install -r requirements.txt
-copy ..\.env.example .env      # Mac/Linux: cp ../.env.example .env   -> then add your NEBIUS_API_KEY
+copy ..\.env.example .env        # Mac/Linux: cp ../.env.example .env   then add your NEBIUS_API_KEY
 uvicorn main:app --reload
 ```
-Open http://localhost:8000/docs and try `POST /chat` with
+Open http://localhost:8000/docs, run `POST /admin/load-demo`, then try `POST /chat` with
 `{"phone": "03001234567", "message": "Delivery charges kitne hain?"}`.
 
-No API key yet? Leave `NEBIUS_API_KEY` empty: the app runs in **practice mode** ($0). A rule-based practice agent
-(`practice.py`) uses the same tools as the real agent, so orders, bargaining limits, COD risk and alerts can all be tested.
+No key yet? Leave `NEBIUS_API_KEY` empty and the app runs in **practice mode** ($0, replies start with "(practice)").
 
-Load demo data (a bakery, 20 customers, ~3 months of orders, all labelled demo) into the running server:
-`POST /admin/load-demo` from the `/docs` page (works with or without Firebase).
-
-**Frontend** (second terminal, needs Node.js 18+):
+**Frontend** (Node.js 18+), in a second terminal:
 ```bash
 cd frontend
 npm install
-copy .env.example .env         # Mac/Linux: cp .env.example .env
+copy .env.example .env           # Mac/Linux: cp .env.example .env
 npm run dev
 ```
-Open http://localhost:5173: the owner dashboard (Overview, Customer chat, Inbox, Orders, Customers, Insights,
-Settings). Start with the two-minute steps on the Overview page. Details in [frontend/README.md](frontend/README.md).
+Open http://localhost:5173.
 
-Tests: `pytest -q` (59 offline tests, no key needed) · Classifier accuracy: `python test_classify.py` (needs key)
+**Tests:** `pytest -q` in `backend` (offline, with a fake Nemotron; no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
 
-## API endpoints
-Interactive docs for every endpoint: `/docs` on the running server.
+## Settings
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| POST | `/chat` | Customer message in, AI reply out (web chat simulator) |
-| POST | `/webhook/whatsapp` | Twilio WhatsApp messages (signature checked) |
-| GET | `/orders` · PATCH `/orders/{id}` | Orders with COD risk level and reasons · mark delivered / cancelled |
-| GET | `/flags` · POST `/flags/{id}/resolve` | Owner alerts: complaints, unknown questions, high-risk / large orders, abuse |
-| GET | `/conversations` · `/conversations/{phone}` | Chats for the owner |
-| POST | `/conversations/{phone}/takeover` · `/reply` | Owner pauses the AI and replies |
-| GET | `/bookings` · `/customers` | Bookings, customer memory |
-| GET/POST | `/setup` · `/setup/parse` · `/setup/save` | 5-minute owner setup (Super reads a pasted menu) |
-| GET | `/summary/daily` · `/summary/monthly` | Sales, profit, top products, chart data, AI note (Nano) |
-| GET | `/advice/monthly` | AI business advisor (Nemotron 3 Ultra), cached |
-| GET | `/usage` | Today's AI calls, tokens and estimated cost |
-| POST | `/market/check` · GET `/market/checks` | Market price check: Tavily search → Nemotron Super → Python comparison (saved 24 h) |
-| POST | `/admin/run-daily-report` · GET `/reports` | Nightly owner report (same code as the Serverless Job) |
-| POST | `/admin/load-demo` | Fill the database with labelled demo data (bakery, customers, orders) |
-
-## Deploy
-The repo includes `render.yaml`: on Render choose **New + → Blueprint**, pick this repo, and fill in the secret
-values it asks for (`NEBIUS_API_KEY`, Twilio). Add the Firebase key as a Secret File named `firebase-key.json`.
-The frontend deploys on Vercel: import the repo, set **Root Directory** to `frontend`, and add `VITE_API_URL` = your Render URL.
-
-## Bonus: Tavily, Nebius Serverless, WhatsApp, Firebase
-All optional. Each one switches on when its setting is filled in `backend/.env`; empty = the app still works.
+Each optional feature switches on when its setting is filled in; if it's empty, the app still works.
 
 | Feature | Setting | Without it |
-|---|---|---|
-| Real Nemotron AI | `NEBIUS_API_KEY` | Practice mode (fake AI, $0) |
-| Market price check | `TAVILY_API_KEY` (free at app.tavily.com) | Clearly labelled sample results |
-| Saved data | `FIREBASE_CREDENTIALS=firebase-key.json` | In-memory data (lost when the server stops) |
-| WhatsApp | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL` | Web chat simulator only |
-| Nightly report on WhatsApp | `OWNER_WHATSAPP` (+ Twilio) | Report saved in the dashboard only |
+| --- | --- | --- |
+| Real Nemotron AI | `NEBIUS_API_KEY` | Practice mode (rule-based, $0) |
+| Saved data | `FIREBASE_CREDENTIALS` (file path or JSON text) | In-memory data, lost on restart |
+| Market price check | `TAVILY_API_KEY` | Clearly labelled sample results |
+| WhatsApp | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL` | Web chat only |
+| Nightly report on WhatsApp | `OWNER_WHATSAPP` (+ Twilio) | Report shown in the dashboard only |
+| Cost limits | `DAILY_MESSAGE_LIMIT`, `TOTAL_DAILY_LIMIT`, `DAILY_BUDGET_USD` | Defaults: 40 / 500 / $1.50 per day |
 
-**Nebius Serverless (optional, needs a Nebius AI Cloud account).** The `Dockerfile` packages the backend.
-- *Serverless Job* (nightly report, a minute of CPU per run):
-  `nebius ai job create --name dukaan-report --image <dockerhub-user>/dukaan-dost:1 --container-command python --args "daily_report.py" --env "FIREBASE_CREDENTIALS=firebase-key.json" --inject-file "firebase-key.json:/app/backend/firebase-key.json" --env-secret NEBIUS_API_KEY=<secret> --platform cpu-d3 --preset 4vcpu-16gb`
-- *Serverless Endpoint* (the API itself, instead of Render):
-  `nebius ai endpoint create --name dukaan-api --image <dockerhub-user>/dukaan-dost:1 --container-port 8000 --platform cpu-d3 --preset 4vcpu-16gb`
-  Endpoints bill per second while running: delete it when you don't need it (`nebius ai endpoint delete`).
-Secrets are passed as environment variables / secrets at create time, never baked into the image.
+## API endpoints
 
-## Feedback on Nebius and NVIDIA
-See [FEEDBACK.md](FEEDBACK.md).
+Full interactive docs: [`/docs`](https://dukaandostapi.vercel.app/docs).
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| POST | `/chat` | Customer message in, AI reply out |
+| POST | `/webhook/whatsapp` | Twilio WhatsApp messages (signature checked) |
+| GET · PATCH | `/orders` · `/orders/{id}` | Orders with COD risk and reasons · mark delivered or cancelled |
+| GET · POST | `/flags` · `/flags/{id}/resolve` | Owner alerts: complaints, unknown questions, risky or large orders |
+| GET | `/conversations` · `/conversations/{phone}` | Chats for the owner |
+| POST | `/conversations/{phone}/takeover` · `/reply` | Owner pauses the AI and replies |
+| GET | `/bookings` · `/customers` | Bookings and customer memory |
+| GET · POST | `/setup` · `/setup/parse` · `/setup/save` | 5-minute setup (Super reads a pasted menu) |
+| GET | `/summary/daily` · `/summary/monthly` | Sales, profit, top products, chart data, AI note |
+| GET | `/advice/monthly` | AI business advisor (Nemotron 3 Ultra), cached |
+| GET | `/usage` | Today's AI calls, tokens and estimated cost |
+| POST · GET | `/market/check` · `/market/checks` | Market price check (Tavily + Super + Python) |
+| POST · GET | `/admin/run-daily-report` · `/reports` | Nightly owner report |
+| POST | `/admin/load-demo` | Load labelled demo data |
+
+## Limitations (honest list)
+
+- The live demo is public and uses made-up demo data. Anyone with the link can see the dashboard, so don't enter real customer details.
+- Without Firebase, data lives in memory and resets when the backend restarts (often, on Vercel).
+- WhatsApp needs a Twilio account; the Twilio sandbox only works for numbers that join it first.
+- If Nemotron 3 Ultra isn't available in a region, the advisor falls back to Nemotron 3 Super.
+- Roman Urdu spelling varies a lot ("kitne", "kitnay", "ktny"); unusual spellings can still be misread. Unclear messages go to the owner.
+- COD risk uses simple, explainable rules, not a trained model.
+- There's no login yet, so the dashboard isn't protected.
 
 ## Project structure
+
 ```
+app.py              Vercel entry point (loads backend/main.py)
+requirements.txt    Python packages for Vercel (same as backend/requirements.txt)
 backend/
-  main.py        FastAPI app and all endpoints
-  ai.py          Token Factory / Nemotron Nano + Super + Ultra calls, cost tracking
-  agent.py       Nemotron Super tool-calling loop (max 6 steps)
-  tools.py       get_products, check_discount, preview/confirm_order, create_booking, flag_owner
-  risk.py        COD risk rules (pure Python)
-  summary.py     daily/monthly numbers + insights for Ultra advice (all maths in Python)
-  practice.py    practice-mode agent (no key): simple rules + the same tools, replies start with (practice)
-  market.py      Tavily market price check (search -> Super reads prices -> Python compares)
-  daily_report.py  nightly owner report (background job / Nebius Serverless Job)
-  db.py          Firestore (or in-memory when FIREBASE_CREDENTIALS is empty)
-  prompts/       system prompts as .txt files
-  tests/         offline tests with a fake Nemotron (pytest -q)
+  main.py           FastAPI app and all endpoints
+  ai.py             Token Factory calls (Nano, Super, Ultra), cost tracking, budget checks
+  agent.py          Nemotron Super tool-calling loop (max 6 steps)
+  tools.py          get_products, check_discount, preview/confirm_order, create_booking, flag_owner
+  risk.py           COD risk rules (pure Python)
+  summary.py        daily and monthly numbers (all maths in Python)
+  market.py         Tavily market price check
+  practice.py       practice-mode agent (no key needed)
+  daily_report.py   nightly owner report (also runs as a Nebius Serverless Job)
+  db.py             Firestore, or in-memory when FIREBASE_CREDENTIALS is empty
+  prompts/          system prompts as .txt files
+  tests/            offline tests with a fake Nemotron
 frontend/
-  src/pages/     Overview, CustomerChat, Inbox, Orders, Customers, Insights, Settings
-  src/components ui.jsx (design system), Layout.jsx (logo, sidebar, footer)
-  src/site.js    footer contact details
-Dockerfile       container for Nebius Serverless Endpoints / Jobs (optional)
-sample_data/     demo shop + load_sample.py (20 customers, ~3 months of demo orders)
+  src/pages/        Overview, CustomerChat, Inbox, Orders, Customers, Insights, Settings
+  src/components/   design system, layout, icons
+sample_data/        demo shop + load_sample.py
+Dockerfile          container for Nebius Serverless Endpoints / Jobs (optional)
+render.yaml         Render blueprint (optional)
 ```
 
 ## Built during the hackathon
-All code was written during the submission period (started Sep 25, 2026).
+
+All code was written during the submission period (started Sep 25, 2026) by a team of three:
+**Sehar Emaan** (backend and AI), **Mahira Hassan** (frontend) and **Midhya Rani** (tests, demo data and docs).
+
+## Feedback
+
+Our feedback on Nebius Token Factory and NVIDIA Nemotron is in [FEEDBACK.md](FEEDBACK.md).
 
 ## License
-MIT — see [LICENSE](LICENSE).
+
+MIT. See [LICENSE](LICENSE).
