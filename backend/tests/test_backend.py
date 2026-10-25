@@ -368,3 +368,25 @@ def test_load_demo_endpoint_fills_running_server():
     assert r["ok"] and r["orders"] > 50 and r["customers"] == 20
     assert len(client.get("/orders").json()) == r["orders"]
     assert client.post("/admin/load-demo", params={"days": 500}).status_code == 422
+
+
+def test_stall_reply_gets_one_retry(monkeypatch):
+    """If Super only says 'ek moment, check karta hoon', the agent is asked once more to actually do it."""
+    import agent
+    from types import SimpleNamespace as NS
+
+    replies = [NS(tool_calls=None, content="Ek moment! Products dhundhta hoon."),
+               NS(tool_calls=None, content="Chocolate Fudge Cake 1kg Rs 2,200 hai.")]
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda model, messages, tl: replies.pop(0))
+    out = agent.run_agent("03009990001", "roman_urdu")
+    assert out["reply"].startswith("Chocolate Fudge Cake") and not replies
+
+
+def test_short_answer_mid_order_goes_back_to_agent():
+    """'Sham 7 baje' right after the agent asked a question is routed to the agent even if Nano says greeting."""
+    import main
+    conv = {"agent_at": db.now_iso()}
+    assert main._mid_order(conv, "greeting") is True
+    assert main._mid_order(conv, "abuse") is False
+    assert main._mid_order({}, "other") is False
