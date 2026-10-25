@@ -93,6 +93,37 @@ def check_discount(phone: str, product_id: str, requested_percent: float = 0) ->
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
+def earliest_slot(hours_needed: float) -> datetime:
+    """First time that is at least `hours_needed` from now AND inside shop opening hours."""
+    shop = db.get_shop()
+    t = db.now_karachi() + timedelta(hours=hours_needed)
+    t = t.replace(second=0, microsecond=0)
+    if t.minute:
+        t += timedelta(minutes=60 - t.minute)  # round up to the next full hour
+    hours = shop.get("opening_hours") or {}
+    if not hours:
+        return t
+    for _ in range(8 * 24):  # look up to 8 days ahead, hour by hour
+        day = hours.get(DAYS[t.weekday()])
+        if day and day[0] <= t.strftime("%H:%M") <= day[1]:
+            return t
+        if day and t.strftime("%H:%M") < day[0]:
+            h, m = map(int, day[0].split(":"))
+            opening = t.replace(hour=h, minute=m)
+            if opening >= db.now_karachi() + timedelta(hours=hours_needed):
+                return opening
+        t += timedelta(hours=1)
+    return t
+
+
+def notice_hours(categories: list[str] | None = None) -> float:
+    shop = db.get_shop()
+    needed = float(shop.get("min_notice_hours", 0))
+    for cat in categories or []:
+        needed = max(needed, float(shop.get("advance_notice_hours", {}).get(cat, 0)))
+    return needed
+
+
 def check_time(when: str, categories: list[str] | None = None) -> tuple[str | None, str | None]:
     """Validate a delivery/booking time against shop hours and notice rules.
 
@@ -115,13 +146,13 @@ def check_time(when: str, categories: list[str] | None = None) -> tuple[str | No
         if not (open_t <= dt.strftime("%H:%M") <= close_t):
             return None, f"{dt:%H:%M} is outside shop hours on {day} ({open_t}-{close_t})."
 
-    needed = float(shop.get("min_notice_hours", 0))
-    for cat in categories or []:
-        needed = max(needed, float(shop.get("advance_notice_hours", {}).get(cat, 0)))
+    needed = notice_hours(categories)
     earliest = now + timedelta(hours=needed)
     if dt < earliest:
         why = f"needs {needed:g} hours notice" if needed else "is in the past"
-        return None, f"Too soon: this {why}. Earliest possible is after {earliest:%Y-%m-%d %H:%M}, within shop hours."
+        slot = earliest_slot(needed)
+        return None, (f"Too soon: this {why}. Earliest possible delivery: {slot:%A %Y-%m-%d %H:%M}. "
+                      "Offer exactly this time (or any later time in shop hours).")
     return dt.strftime("%Y-%m-%d %H:%M"), None
 
 

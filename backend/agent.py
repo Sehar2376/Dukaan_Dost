@@ -53,12 +53,21 @@ def draft_info(phone: str) -> str:
 def build_messages(phone: str, language: str) -> list[dict]:
     shop = db.get_shop()
     now = db.now_karachi()
+    from datetime import timedelta
+
+    kal, parson = now + timedelta(days=1), now + timedelta(days=2)
+    cake = tools.earliest_slot(tools.notice_hours(["cake"]))
+    other = tools.earliest_slot(tools.notice_hours([]))
+    dates = (f"aaj (today) = {now:%A %Y-%m-%d}; kal (tomorrow) = {kal:%A %Y-%m-%d}; "
+             f"parson (day after tomorrow) = {parson:%A %Y-%m-%d}. "
+             f"Earliest possible delivery right now: cakes {cake:%A %Y-%m-%d %H:%M}, "
+             f"other items {other:%A %Y-%m-%d %H:%M} (calculated by the system from shop hours and notice rules).")
     system = ai.load_prompt("agent.txt").format(
         shop_name=shop["name"], city=shop.get("city", ""), now=now.strftime("%Y-%m-%d %H:%M"),
         weekday=now.strftime("%A"), draft_info=draft_info(phone), phone_masked=mask(phone),
         language_instruction=ai.LANG_INSTRUCTIONS.get(language, ai.LANG_INSTRUCTIONS["roman_urdu"]),
         customer_info=customer_info(phone), shop_info=db.shop_info_text(),
-    )
+    ) + "\n\nDATES AND EARLIEST TIMES (trust these, do not calculate them yourself)\n" + dates
     messages = [{"role": "system", "content": system}]
     for m in db.get_conversation(phone)["messages"][-HISTORY:]:
         if m["role"] in ("customer", "assistant", "owner") and m["text"]:
