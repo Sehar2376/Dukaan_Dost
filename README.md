@@ -88,6 +88,8 @@ All AI calls go through the **Nebius Token Factory** OpenAI-compatible API. We r
 | **Nemotron 3 Super** (120B-A12B) | Tool-calling agent for orders, bookings and bargaining (max 6 steps); reading a pasted menu; reading prices out of Tavily results | Reliable multi-step tool use |
 | **Nemotron 3 Ultra** (550B-A55B) | Monthly business advisor, only when the owner asks; the answer is cached | Deep reasoning over a month of numbers; rare call, so it costs about a cent |
 
+**See the routing live:** in **Customer chat**, every reply shows which model handled it (for example *Nemotron Nano → Nemotron Super*) and what it understood. These labels are for the demo; customers on WhatsApp only see the replies.
+
 **What the model never does:** prices, totals, discounts and COD risk scores are always calculated in Python. The model decides *what* to do; code decides the numbers.
 
 **Cost controls built in:**
