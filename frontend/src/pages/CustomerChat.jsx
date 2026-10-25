@@ -94,7 +94,7 @@ function Trace({ last, practice }) {
 }
 
 export default function CustomerChat({ health, shop }) {
-  const [phone, setPhone] = useState(() => store.get("dd_chat_phone", "03001234567"));
+    const [phone, setPhone] = useState(() => store.get("dd_chat_phone", randomPhone()));
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
