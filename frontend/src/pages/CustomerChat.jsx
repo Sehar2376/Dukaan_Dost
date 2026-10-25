@@ -113,7 +113,10 @@ export default function CustomerChat({ health, shop }) {
     return () => { alive = false; };
   }, [phone]);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [msgs, busy]);
+  // Braces matter: newer browsers return a Promise from scrollIntoView, and React must not get it back.
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [msgs, busy]);
 
   async function send(message) {
     const m = (message ?? text).trim();
