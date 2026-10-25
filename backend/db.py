@@ -110,23 +110,42 @@ class FirestoreStore:
         hit = self._cache.get(col)
         return hit[1] if hit and time.time() - hit[0] < self.ttl else None
 
-    def _forget(self, col):
+    def _forget(self, col, doc_id=None):
         self._cache.pop(col, None)
+        if doc_id is not None:
+            self._cache.pop((col, doc_id), None)
 
     def get(self, col, doc_id):
-        with self._lock:
-            docs = self._cached(col)
-            if docs is not None and doc_id in docs:
-                return dict(docs[doc_id])
+        import time
+
+        # Only data that rarely changes (shop, menu, FAQs...) is reused for single reads. Chats, orders and
+        # usage are always read fresh, so two server copies never overwrite each other's new messages.
+        static = col in STATIC_COLLECTIONS
+        if static:
+            with self._lock:
+                docs = self._cached(col)
+                if docs is not None and doc_id in docs:
+                    return dict(docs[doc_id])
+                hit = self._cache.get((col, doc_id))
+                if hit and time.time() - hit[0] < self.ttl:
+                    return dict(hit[1]) if hit[1] is not None else None
         snap = self.fs.collection(col).document(doc_id).get()
-        return snap.to_dict() if snap.exists else None
+        value = snap.to_dict() if snap.exists else None
+        if static:
+            with self._lock:
+                self._cache[(col, doc_id)] = (time.time(), value)
+        return dict(value) if value is not None else None
 
     def set(self, col, doc_id, value):
+        import time
+
         self.fs.collection(col).document(doc_id).set(value)
         with self._lock:
             docs = self._cached(col)
             if docs is not None:
                 docs[doc_id] = dict(value)
+            if (col, doc_id) in self._cache:
+                self._cache[(col, doc_id)] = (time.time(), dict(value))
 
     def update(self, col, doc_id, fields):
         self.fs.collection(col).document(doc_id).set(fields, merge=True)
@@ -135,7 +154,8 @@ class FirestoreStore:
             if docs is not None and doc_id in docs:
                 docs[doc_id].update(fields)
             else:
-                self._forget(col)
+                self._cache.pop(col, None)
+            self._cache.pop((col, doc_id), None)
 
     def all(self, col):
         import time
@@ -155,6 +175,7 @@ class FirestoreStore:
         for s in self.fs.collection(col).stream():
             s.reference.delete()
         with self._lock:
+            self._cache = {k: v for k, v in self._cache.items() if not (isinstance(k, tuple) and k[0] == col)}
             self._cache[col] = (time.time(), {})
 
     def incr(self, col, doc_id, amounts):
@@ -163,12 +184,113 @@ class FirestoreStore:
         self.fs.collection(col).document(doc_id).set(
             {k: firestore.Increment(v) for k, v in amounts.items()}, merge=True)
         with self._lock:
-            self._forget(col)
+            self._forget(col, doc_id)
+
+
+# Collections that change rarely, so single reads may be reused for FIRESTORE_CACHE_SECONDS.
+STATIC_COLLECTIONS = {"shop", "products", "faqs", "advice", "market", "reports"}
+
+
+def _is_quota_error(e: Exception) -> bool:
+    return type(e).__name__ == "ResourceExhausted" or "RESOURCE_EXHAUSTED" in str(e) or "Quota exceeded" in str(e)
+
+
+class BackupStore:
+    """Firestore first. If Firebase's free daily quota runs out, switch to memory (with the demo shop loaded)
+    so customers still get AI replies instead of an error. Data written in backup mode is temporary.
+    Firestore is tried again every BACKUP_RETRY_SECONDS (default 30 minutes)."""
+
+    def __init__(self, primary):
+        import threading
+
+        self.primary = primary
+        self.memory = MemoryStore()
+        self.backup_since = None
+        self.retry_after = float(os.getenv("BACKUP_RETRY_SECONDS", "1800"))
+        self._seeding = False
+        self._lock = threading.Lock()
+
+    @property
+    def in_backup(self) -> bool:
+        return self.backup_since is not None
+
+    def _start_backup(self, err):
+        import time
+
+        with self._lock:
+            if self.backup_since is not None:
+                return
+            self.backup_since = time.time()
+        print(f"Firestore unavailable ({type(err).__name__}): backup mode, data kept in memory for now")
+        # Keep whatever this server copy already read from Firestore, then fill any gaps with the demo shop.
+        for key, (_, docs) in list(getattr(self.primary, "_cache", {}).items()):
+            if isinstance(key, str):
+                for doc_id, value in docs.items():
+                    self.memory.set(key, doc_id, dict(value))
+            elif docs is not None:
+                self.memory.set(key[0], key[1], dict(docs))
+        self._seeding = True
+        try:
+            if not self.memory.get("shop", "main") or not self.memory.all("orders"):
+                import sys
+
+                sys.path.insert(0, str(Path(__file__).parent.parent / "sample_data"))
+                import load_sample
+
+                load_sample.main(days=30)
+        except Exception as e:  # seeding is best effort; the shop data alone is enough to chat
+            print(f"Backup demo data not fully loaded: {e}")
+            if not self.memory.get("shop", "main"):
+                data = json.loads(SAMPLE.read_text(encoding="utf-8"))
+                save_catalog(data["shop"], data["products"], data["faqs"])
+        finally:
+            self._seeding = False
+
+    def _call(self, name, *args):
+        import time
+
+        if self._seeding:
+            return getattr(self.memory, name)(*args)
+        if self.backup_since is not None and time.time() - self.backup_since > self.retry_after:
+            self.backup_since = None  # quota may have reset: try Firestore again
+        if self.backup_since is None:
+            try:
+                return getattr(self.primary, name)(*args)
+            except Exception as e:
+                if not _is_quota_error(e):
+                    raise
+                self._start_backup(e)
+        return getattr(self.memory, name)(*args)
+
+    def get(self, col, doc_id):
+        return self._call("get", col, doc_id)
+
+    def set(self, col, doc_id, value):
+        return self._call("set", col, doc_id, value)
+
+    def update(self, col, doc_id, fields):
+        return self._call("update", col, doc_id, fields)
+
+    def all(self, col):
+        return self._call("all", col)
+
+    def delete_all(self, col):
+        return self._call("delete_all", col)
+
+    def incr(self, col, doc_id, amounts):
+        return self._call("incr", col, doc_id, amounts)
 
 
 _cred = os.getenv("FIREBASE_CREDENTIALS", "").strip()
-store = FirestoreStore(_cred) if _cred else MemoryStore()
+store = BackupStore(FirestoreStore(_cred)) if _cred else MemoryStore()
 USING_FIRESTORE = bool(_cred)
+
+
+def database_mode() -> str:
+    """'firestore', 'backup' (Firebase quota reached: temporary memory) or 'memory' (no Firebase key)."""
+    if getattr(store, "in_backup", False):
+        return "backup"
+    return "firestore" if USING_FIRESTORE else "memory"
 
 
 def new_id(prefix: str) -> str:

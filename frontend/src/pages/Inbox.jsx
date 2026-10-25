@@ -62,7 +62,7 @@ function Alerts({ openChat, refreshFlags }) {
 function Conversations({ phone, setPhone }) {
   const toast = useToast();
   const list = useApi("/conversations");
-  const conv = useApi(phone ? `/conversations/${encodeURIComponent(phone)}` : "/", { skip: !phone, ms: 15000 });
+  const conv = useApi(phone ? `/conversations/${encodeURIComponent(phone)}` : "/", { skip: !phone, ms: 30000 });
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
@@ -184,7 +184,7 @@ function Conversations({ phone, setPhone }) {
 }
 
 export default function Inbox({ params, go, refreshFlags }) {
-  const flags = useApi("/flags", { ms: 30000 });
+  const flags = useApi("/flags", { ms: 120000 });
   const tab = params.tab || (params.phone ? "chats" : "alerts");
   const phone = params.phone || null;
   const setTab = (t) => go("inbox", { tab: t, phone: t === "chats" ? phone : undefined });

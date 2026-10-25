@@ -129,3 +129,57 @@ def test_cache_saves_firestore_reads(fs):
         assert calls["n"] == 1 and got["o1"]["status"] == "delivered" and got["o2"]["total"] == 200
     finally:
         _Col.stream = real_stream
+
+
+def test_single_reads_cached_only_for_static_data(fs):
+    """Shop info is read once and reused; conversations are always read fresh (no lost messages)."""
+    calls = {"n": 0}
+    real_get = _Doc.get
+
+    def counting_get(self):
+        calls["n"] += 1
+        return real_get(self)
+
+    _Doc.get = counting_get
+    try:
+        fs.set("shop", "main", {"name": "Test"})
+        fs.set("conversations", "0300", {"messages": []})
+        fs.get("shop", "main"), fs.get("shop", "main")
+        assert calls["n"] <= 1
+        before = calls["n"]
+        fs.get("conversations", "0300"), fs.get("conversations", "0300")
+        assert calls["n"] == before + 2
+        fs.update("shop", "main", {"name": "New"})
+        assert fs.get("shop", "main")["name"] == "New"
+    finally:
+        _Doc.get = real_get
+
+
+def test_backup_mode_when_quota_runs_out(fs, monkeypatch):
+    """If Firestore says 'quota exceeded', the app keeps working from memory with the demo shop."""
+    class ResourceExhausted(Exception):
+        pass
+
+    def broken(*a, **k):
+        raise ResourceExhausted("429 Quota exceeded.")
+
+    backup = db.BackupStore(fs)
+    monkeypatch.setattr(db, "store", backup)
+    db.load_sample_shop(force=True)          # works normally first
+    assert not backup.in_backup
+    monkeypatch.setattr(fs, "get", broken)
+    monkeypatch.setattr(fs, "all", broken)
+    monkeypatch.setattr(fs, "set", broken)
+    assert db.get_shop()["name"] == "Sweet Crumbs Bakery"   # served from memory now
+    assert backup.in_backup and db.database_mode() == "backup"
+    assert len(db.get_products()) == 8 and db.list_orders()
+    db.add_message("03001112222", "customer", "salam")
+    assert db.get_conversation("03001112222")["messages"][-1]["text"] == "salam"
+
+
+def test_other_firestore_errors_are_not_hidden(fs, monkeypatch):
+    backup = db.BackupStore(fs)
+    monkeypatch.setattr(fs, "get", lambda *a: (_ for _ in ()).throw(PermissionError("denied")))
+    with pytest.raises(PermissionError):
+        backup.get("shop", "main")
+    assert not backup.in_backup

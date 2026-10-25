@@ -23,7 +23,7 @@ export default function App() {
   const [route, setRoute] = useState(readHash);
   const health = useApi("/", { ms: 60000 });
   const setup = useApi("/setup", { ms: 120000 });
-  const flags = useApi("/flags", { ms: 30000 });
+  const flags = useApi("/flags", { ms: 120000 });
 
   useEffect(() => {
     const onHash = () => { setRoute(readHash()); window.scrollTo(0, 0); };

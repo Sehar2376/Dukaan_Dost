@@ -41,8 +41,8 @@ function Sales() {
   const [period, setPeriod] = useState("month");
   const [day, setDay] = useState(todayISO());
   const [month, setMonth] = useState(thisMonth());
-  const daily = useApi("/summary/daily", { params: { date: day, language: "english" }, skip: period !== "day", ms: 60000 });
-  const monthly = useApi("/summary/monthly", { params: { month, language: "english" }, skip: period !== "month", ms: 60000 });
+  const daily = useApi("/summary/daily", { params: { date: day, language: "english" }, skip: period !== "day", ms: 120000 });
+  const monthly = useApi("/summary/monthly", { params: { month, language: "english" }, skip: period !== "month", ms: 120000 });
   const s = period === "day" ? daily : monthly;
   const d = s.data;
   const maxQty = Math.max(1, ...(d?.top_products || []).map((p) => p.quantity));

@@ -56,7 +56,7 @@ class ChatOut(BaseModel):
 
 @app.get("/")
 def health():
-    return {"status": "ok", "mock_ai": ai.MOCK, "firestore": db.USING_FIRESTORE,
+    return {"status": "ok", "mock_ai": ai.MOCK, "firestore": db.USING_FIRESTORE, "database": db.database_mode(),
             "tavily": market.TAVILY_READY, "whatsapp": twilio_ready(),
             "nano": ai.NANO, "super": ai.SUPER, "ultra": ai.ULTRA}
 
@@ -497,4 +497,5 @@ def load_demo(days: int = Query(90, ge=7, le=120)):
 
     load_sample.main(days=days)
     return {"ok": True, "orders": len(db.list_orders()), "customers": len(db.list_customers()),
-            "database": "firestore" if db.USING_FIRESTORE else "memory (lost when the server stops)"}
+            "database": {"firestore": "firestore", "backup": "backup memory (Firebase quota reached; temporary)",
+                         "memory": "memory (lost when the server stops)"}[db.database_mode()]}

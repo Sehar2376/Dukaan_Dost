@@ -32,7 +32,8 @@ export async function api(path, { method = "GET", body, params } = {}) {
 }
 
 // Load data and refresh it every `ms` (30 s by default: keeps Firestore reads low).
-export function useApi(path, { params, ms = 30000, skip = false } = {}) {
+// Pages refresh every 2 minutes by default (fewer Firebase reads); clicks and saves reload straight away.
+export function useApi(path, { params, ms = 120000, skip = false } = {}) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(!skip);
