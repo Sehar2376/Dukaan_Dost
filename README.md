@@ -11,9 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://dukaan-dost-sooty.vercel.app"><b>Live demo</b></a> ·
-  <a href="https://dukaandostapi.vercel.app/docs">API docs</a> ·
-  <a href="VIDEO-LINK">Demo video</a> ·
+  Live demo and video: see our Devpost submission ·
   <a href="FEEDBACK.md">Feedback for Nebius and NVIDIA</a>
 </p>
 
@@ -28,9 +26,23 @@
 
 ---
 
+## Who it's for
+
+Ayesha runs a home bakery in Karachi from Instagram and WhatsApp. Between baking, she answers "kitne ka hai?" fifty times a day, misses orders while her hands are in the dough, and last month lost two cakes to cash-on-delivery customers who never picked up. Dukaan Dost answers her customers in their own Roman Urdu, takes the order, bargains only as far as she allows, and warns her before she bakes for a risky COD order.
+
+## Why Dukaan Dost is different
+
+Most WhatsApp bots are English FAQ menus or a general chatbot with a prompt. Dukaan Dost is built for how Pakistani small shops actually sell:
+
+1. **Roman Urdu first.** It understands mixed Roman Urdu, Urdu and English, and replies in the customer's own style.
+2. **Bargaining with hard limits.** Customers expect to haggle. The AI can negotiate, but every discount is checked in Python against the owner's limit, so it can't be talked below it.
+3. **Fake COD protection.** Every cash-on-delivery order gets a risk level with plain reasons before the owner prepares it.
+4. **The owner stays in control.** Complaints, big or urgent orders and unknown questions go to the owner, who can take over any chat.
+5. **Right-sized AI.** Nano handles every message, Super runs the order agent, and Ultra is used only for monthly advice, with daily budget limits, so it's cheap enough for a small shop.
+
 ## Try it in 2 minutes
 
-1. Open the **[live demo](https://dukaan-dost-sooty.vercel.app)**.
+1. Open the live demo (link in our Devpost submission).
 2. On **Overview**, click **Load sample shop**. This loads *Sweet Crumbs Bakery*: a made-up Karachi home bakery with 20 customers and about 3 months of orders, all labelled demo data.
 3. Open **Customer chat** and type as a customer:
    - `Assalam o alaikum, 1kg chocolate cake kitne ka hai?`
@@ -103,22 +115,25 @@ Owner dashboard (React + Vite): Overview · Customer chat · Inbox · Orders · 
 Owner asks "what do others charge?" ──► Tavily search ──► Nemotron Super reads prices ──► Python compares
 Owner asks for monthly advice ──► numbers (Python) + market prices ──► Nemotron 3 Ultra ──► 3–5 tips
 Every night ──► daily_report.py ──► Nano writes a short note ──► owner (dashboard / WhatsApp)
+                (can run as a Nebius Serverless Job)
 ```
 
 ## Deployment (live)
 
-| Part | Where | Link |
-| --- | --- | --- |
-| Frontend (React + Vite) | Vercel, root directory `frontend` | https://dukaan-dost-sooty.vercel.app |
-| Backend (FastAPI) | Vercel (Python), entry point `app.py` at the repo root | https://dukaandostapi.vercel.app |
-| AI models | Nebius Token Factory | Nemotron 3 Nano, Super, Ultra |
+| Part | Where |
+| --- | --- |
+| Frontend (React + Vite) | Vercel, root directory `frontend` |
+| Backend (FastAPI) | Vercel (Python), entry point `app.py` at the repo root |
+| AI models | Nebius Token Factory: Nemotron 3 Nano, Super, Ultra |
+
+The live links are in our Devpost submission.
 
 **Deploy your own copy (free, no card):**
 1. **Backend:** on Vercel, import this repo with Root Directory `./` (Vercel detects FastAPI from `app.py`). Add the environment variables from `.env.example`; at minimum `NEBIUS_API_KEY`.
 2. **Frontend:** import the same repo again with Root Directory `frontend` (Vite), and add `VITE_API_URL` = your backend URL.
 3. **Firebase (recommended on Vercel):** the backend restarts often there, so in-memory data doesn't last. Set `FIREBASE_CREDENTIALS` to the full JSON text of a Firebase service-account key. The code accepts either a file path or the JSON text.
 
-`render.yaml` and the `Dockerfile` are also included for Render or Nebius Serverless Endpoints and Jobs.
+`render.yaml` and the `Dockerfile` are also included. The backend and the nightly report (`daily_report.py`) can run as a Nebius Serverless Endpoint and Job; we have not deployed them there yet.
 
 ## Run it locally
 
@@ -146,7 +161,7 @@ npm run dev
 ```
 Open http://localhost:5173.
 
-**Tests:** `pytest -q` in `backend` (offline, with a fake Nemotron; no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
+**Tests:** `pytest -q` in `backend` runs 60 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
 
 ## Settings
 
@@ -163,7 +178,7 @@ Each optional feature switches on when its setting is filled in; if it's empty, 
 
 ## API endpoints
 
-Full interactive docs: [`/docs`](https://dukaandostapi.vercel.app/docs).
+Full interactive docs: `/docs` on the running backend.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
@@ -184,13 +199,12 @@ Full interactive docs: [`/docs`](https://dukaandostapi.vercel.app/docs).
 
 ## Limitations (honest list)
 
-- The live demo is public and uses made-up demo data. Anyone with the link can see the dashboard, so don't enter real customer details.
+- The demo uses made-up data and has no login yet, so anyone with the link can see and reset it. Don't enter real customer details. AI spending is capped per day.
 - Without Firebase, data lives in memory and resets when the backend restarts (often, on Vercel).
 - WhatsApp needs a Twilio account; the Twilio sandbox only works for numbers that join it first.
 - If Nemotron 3 Ultra isn't available in a region, the advisor falls back to Nemotron 3 Super.
 - Roman Urdu spelling varies a lot ("kitne", "kitnay", "ktny"); unusual spellings can still be misread. Unclear messages go to the owner.
 - COD risk uses simple, explainable rules, not a trained model.
-- There's no login yet, so the dashboard isn't protected.
 
 ## Project structure
 
@@ -206,12 +220,14 @@ backend/
   summary.py        daily and monthly numbers (all maths in Python)
   market.py         Tavily market price check
   practice.py       practice-mode agent (no key needed)
-  daily_report.py   nightly owner report (also runs as a Nebius Serverless Job)
+  daily_report.py   nightly owner report (can run as a Nebius Serverless Job)
   db.py             Firestore, or in-memory when FIREBASE_CREDENTIALS is empty
   prompts/          system prompts as .txt files
   tests/            offline tests with a fake Nemotron
 frontend/
-  src/pages/        Overview, CustomerChat, Inbox, Orders, Customers, Insights, Settings
+  src/pages/        7 pages in the menu: Overview, Customer chat, Inbox, Orders, Customers, Insights, Settings.
+                    Sections inside them: Bookings (in Orders), Market prices and AI advice (in Insights),
+                    Setup and AI usage (in Settings), Alerts (in Inbox)
   src/components/   design system, layout, icons
 sample_data/        demo shop + load_sample.py
 Dockerfile          container for Nebius Serverless Endpoints / Jobs (optional)
