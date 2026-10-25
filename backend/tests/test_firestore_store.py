@@ -106,3 +106,26 @@ def test_chat_endpoint_on_firestore(fs):
     assert r.status_code == 200 and r.json()["reply"]
     assert c.get("/conversations").json()[0]["phone"] == "03191111111"
     assert c.get("/usage").json()["messages"] == 1
+
+
+def test_cache_saves_firestore_reads(fs):
+    """Listing a collection twice reads Firestore once; our own writes keep the cache correct."""
+    calls = {"n": 0}
+    real_stream = _Col.stream
+
+    def counting_stream(self):
+        calls["n"] += 1
+        return real_stream(self)
+
+    _Col.stream = counting_stream
+    try:
+        fs.set("orders", "o1", {"total": 100})
+        fs.all("orders")
+        fs.all("orders")
+        assert calls["n"] == 1
+        fs.set("orders", "o2", {"total": 200})
+        fs.update("orders", "o1", {"status": "delivered"})
+        got = {o["id"]: o for o in fs.all("orders")}
+        assert calls["n"] == 1 and got["o1"]["status"] == "delivered" and got["o2"]["total"] == 200
+    finally:
+        _Col.stream = real_stream
