@@ -67,7 +67,11 @@ def build_messages(phone: str, language: str) -> list[dict]:
     return messages
 
 
-def run_agent(phone: str, language: str) -> dict:
+DISCOUNT_NUDGE = ("SYSTEM NOTE: the customer asked for a lower price. Call check_discount now for the product "
+                  "they are buying (see ORDER IN PROGRESS or the chat) and offer exactly what it returns.")
+
+
+def run_agent(phone: str, language: str, intent: str = "") -> dict:
     """Returns {"reply": str, "tools_used": [...], "order_summary": dict|None}."""
     if ai.MOCK:  # no API key: rule-based practice agent that uses the same tools (see practice.py)
         import practice
@@ -75,7 +79,7 @@ def run_agent(phone: str, language: str) -> dict:
         return practice.run(phone)
 
     messages = build_messages(phone, language)
-    used, summary, nudged = [], None, False
+    used, summary, nudged, discount_nudged = [], None, False, False
     for _ in range(MAX_STEPS):
         msg = ai.chat_with_tools(ai.SUPER, messages, tools.TOOLS)
         if not msg.tool_calls:
@@ -84,6 +88,12 @@ def run_agent(phone: str, language: str) -> dict:
                 nudged = True
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": NUDGE})
+                continue
+            if intent == "bargain" and "check_discount" not in used and not discount_nudged:
+                # bargaining must always go through the owner's limits in code, never the model's own answer
+                discount_nudged = True
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": DISCOUNT_NUDGE})
                 continue
             return {"reply": reply, "tools_used": used, "order_summary": summary}
 
