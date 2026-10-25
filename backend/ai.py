@@ -177,8 +177,10 @@ LANG_INSTRUCTIONS = {
 }
 
 
-def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city: str) -> str:
-    """Nano: answer a question using only saved shop info."""
+def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city: str,
+               history: str = "") -> str:
+    """Nano: answer a question using only saved shop info (plus the last few chat lines, so follow-ups
+    like "maine bata diya hai" or "kya?" make sense)."""
     if MOCK:
         return "(mock) Ji, delivery Rs 200 hai. Owner jald confirm kar dein ge."
     system = load_prompt("faq.txt").format(
@@ -187,6 +189,8 @@ def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city
         language_instruction=LANG_INSTRUCTIONS.get(language, LANG_INSTRUCTIONS["roman_urdu"]),
         shop_info=shop_info,
     )
+    if history:
+        system += "\n\nRECENT CHAT (oldest first, for context only):\n" + history
     return chat(NANO, system, message, temperature=0.3, max_tokens=250)
 
 
