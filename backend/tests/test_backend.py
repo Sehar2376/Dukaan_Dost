@@ -430,3 +430,26 @@ def test_bargain_without_check_discount_is_nudged(monkeypatch):
     out = agent.run_agent("03009990003", "roman_urdu", "bargain")
     assert "check_discount" in out["tools_used"] and out["reply"].startswith("Aap ke liye")
     assert "check_discount now" in seen[1]
+
+
+def test_earliest_slot_respects_notice_and_hours(monkeypatch):
+    """Sunday 22:30 + 24 h cake notice = Monday 22:30, after closing, so the earliest is Tuesday 10:00."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import tools
+    db.load_sample_shop(force=True)
+    sunday_night = datetime(2026, 10, 25, 22, 30, tzinfo=ZoneInfo("Asia/Karachi"))
+    monkeypatch.setattr(db, "now_karachi", lambda: sunday_night)
+    slot = tools.earliest_slot(tools.notice_hours(["cake"]))
+    assert slot.strftime("%a %H:%M") == "Tue 10:00"
+    ok, problem = tools.check_time("2026-10-27 18:00", ["cake"])   # "parson shaam 6 baje"
+    assert ok == "2026-10-27 18:00" and problem is None
+    ok, problem = tools.check_time("2026-10-26 18:00", ["cake"])   # "kal shaam 6 baje": too soon
+    assert ok is None and "Tuesday 2026-10-27 10:00" in problem
+
+
+def test_agent_prompt_lists_dates_and_earliest_times():
+    import agent
+    db.load_sample_shop(force=True)
+    system = agent.build_messages("03009990004", "roman_urdu")[0]["content"]
+    assert "parson (day after tomorrow)" in system and "Earliest possible delivery right now: cakes" in system
