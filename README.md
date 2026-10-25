@@ -161,7 +161,7 @@ npm run dev
 ```
 Open http://localhost:5173.
 
-**Tests:** `pytest -q` in `backend` runs 60 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
+**Tests:** `pytest -q` in `backend` runs 65 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
 
 ## Settings
 
