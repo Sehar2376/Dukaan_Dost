@@ -4,7 +4,7 @@ export const SITE = {
   tagline: "Your shop's AI assistant",
   mission:
     "Helping small Pakistani shops sell on WhatsApp: it answers customers, takes orders, bargains within your limits and flags risky cash-on-delivery orders.",
-  email: "seharemaan4951@gmail.com",
+  email: "",
   phone: "", // optional, e.g. "+92 300 1234567" — leave empty to hide
   city: "Karachi, Pakistan",
   github: "https://github.com/Sehar2376/Dukaan_Dost",
