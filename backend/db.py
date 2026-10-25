@@ -77,7 +77,9 @@ class FirestoreStore:
         from firebase_admin import credentials, firestore
 
         if not firebase_admin._apps:
-            firebase_admin.initialize_app(credentials.Certificate(cred_path))
+            # cred_path is a file path, or (on Vercel) the whole JSON text of the key
+            key = json.loads(cred_path) if cred_path.startswith("{") else cred_path
+            firebase_admin.initialize_app(credentials.Certificate(key))
         self.fs = firestore.client()
 
     def get(self, col, doc_id):
