@@ -88,7 +88,9 @@ function ShopCard({ shop }) {
 
 export function Sidebar({ page, go, alerts, shop }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [page]); // close the phone menu after moving to another page
+  useEffect(() => {
+    setOpen(false);
+  }, [page]); // close the phone menu after moving to another page
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && setOpen(false);
     window.addEventListener("keydown", onKey);
