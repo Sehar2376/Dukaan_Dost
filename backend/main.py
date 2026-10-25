@@ -86,10 +86,11 @@ def _simple(reply: str, language: str = "roman_urdu", intent: str = "other", **k
 
 
 def _mid_order(conv: dict, intent: str) -> bool:
-    """True when the agent talked to this customer in the last 30 minutes and the new message isn't a
-    greeting/abuse. Example: 'Ayesha, House 12, Gulshan, cash' alone looks like 'other', but it is the
-    answer to the agent's question, so it must go back to the agent, not to the FAQ path."""
-    if intent in ("greeting", "abuse") or not conv.get("agent_at"):
+    """True when the agent talked to this customer in the last 30 minutes and the new message isn't
+    abuse. Example: 'Ayesha, House 12, Gulshan, cash' or 'Sham 7 baje' alone looks like 'other' (Nano
+    sometimes even says 'greeting'), but it is the answer to the agent's question, so it must go back
+    to the agent, not to the FAQ path."""
+    if intent == "abuse" or not conv.get("agent_at"):
         return False
     from datetime import datetime, timezone
 
@@ -150,7 +151,7 @@ def _handle(phone: str, message: str) -> ChatOut:
         db.add_flag("question", phone, f"Question the assistant could not answer: {message[:120]}")
     if "flag_owner" in used:  # the agent already alerted the owner
         needs_owner = True
-    elif info["intent"] == "complaint" or info["urgent"]:
+    elif info["intent"] == "complaint" or (info["urgent"] and info["intent"] not in ("greeting", "faq")):
         db.add_flag("complaint" if info["intent"] == "complaint" else "urgent", phone, message[:160])
         needs_owner = True
     if not reply:

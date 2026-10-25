@@ -72,6 +72,14 @@ class MemoryStore:
 
 
 class FirestoreStore:
+    """Firestore with a short in-memory cache per collection.
+
+    The dashboard refreshes every 30-60 s and many endpoints list whole collections (orders,
+    flags...). Without a cache every refresh reads every document, which quickly uses up
+    Firestore's free daily read quota. Reads of a whole collection are reused for
+    FIRESTORE_CACHE_SECONDS (default 120) and our own writes update the cache, so the data
+    this server shows stays correct. Another server instance may lag by up to that time."""
+
     def __init__(self, cred_path):
         import firebase_admin
         from firebase_admin import credentials, firestore
@@ -81,29 +89,81 @@ class FirestoreStore:
             key = json.loads(cred_path) if cred_path.startswith("{") else cred_path
             firebase_admin.initialize_app(credentials.Certificate(key))
         self.fs = firestore.client()
+        self._setup_cache()
+
+    def _setup_cache(self):
+        import threading
+
+        self.ttl = float(os.getenv("FIRESTORE_CACHE_SECONDS", "120"))
+        self._cache = {}  # col -> (time loaded, {doc_id: data})
+        self._lock = threading.Lock()
+
+    def __getattr__(self, name):  # cache set up lazily (e.g. when a test skips __init__)
+        if name in ("ttl", "_cache", "_lock"):
+            self._setup_cache()
+            return getattr(self, name)
+        raise AttributeError(name)
+
+    def _cached(self, col):
+        import time
+
+        hit = self._cache.get(col)
+        return hit[1] if hit and time.time() - hit[0] < self.ttl else None
+
+    def _forget(self, col):
+        self._cache.pop(col, None)
 
     def get(self, col, doc_id):
+        with self._lock:
+            docs = self._cached(col)
+            if docs is not None and doc_id in docs:
+                return dict(docs[doc_id])
         snap = self.fs.collection(col).document(doc_id).get()
         return snap.to_dict() if snap.exists else None
 
     def set(self, col, doc_id, value):
         self.fs.collection(col).document(doc_id).set(value)
+        with self._lock:
+            docs = self._cached(col)
+            if docs is not None:
+                docs[doc_id] = dict(value)
 
     def update(self, col, doc_id, fields):
         self.fs.collection(col).document(doc_id).set(fields, merge=True)
+        with self._lock:
+            docs = self._cached(col)
+            if docs is not None and doc_id in docs:
+                docs[doc_id].update(fields)
+            else:
+                self._forget(col)
 
     def all(self, col):
-        return [dict(s.to_dict(), id=s.id) for s in self.fs.collection(col).stream()]
+        import time
+
+        with self._lock:
+            docs = self._cached(col)
+            if docs is not None:
+                return [dict(v, id=k) for k, v in docs.items()]
+        docs = {s.id: s.to_dict() for s in self.fs.collection(col).stream()}
+        with self._lock:
+            self._cache[col] = (time.time(), docs)
+        return [dict(v, id=k) for k, v in docs.items()]
 
     def delete_all(self, col):
+        import time
+
         for s in self.fs.collection(col).stream():
             s.reference.delete()
+        with self._lock:
+            self._cache[col] = (time.time(), {})
 
     def incr(self, col, doc_id, amounts):
         from firebase_admin import firestore
 
         self.fs.collection(col).document(doc_id).set(
             {k: firestore.Increment(v) for k, v in amounts.items()}, merge=True)
+        with self._lock:
+            self._forget(col)
 
 
 _cred = os.getenv("FIREBASE_CREDENTIALS", "").strip()

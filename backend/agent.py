@@ -12,6 +12,18 @@ import tools
 MAX_STEPS = 6
 HISTORY = 12  # how many earlier messages the model sees
 
+# Replies that only promise to do something ("ek moment, products dhundhta hoon") instead of doing it.
+STALL_WORDS = ("ek moment", "ek sec", "ek minute", "abhi dekhta", "abhi dekhti", "check karta", "check karti",
+               "check kar ke", "dhundhta", "dhundhti", "nikalta", "nikalti", "product id", "product_id",
+               "let me check", "one moment", "please wait")
+NUDGE = ("SYSTEM NOTE: do not tell the customer you will check something. Call the tool you need now "
+         "(product ids are in SHOP INFO, e.g. [p1]) and then reply with the result. Never mention ids or tools.")
+
+
+def is_stall(text: str) -> bool:
+    t = (text or "").lower()
+    return any(w in t for w in STALL_WORDS)
+
 
 def mask(phone: str) -> str:
     return phone[:4] + "-****" + phone[-3:] if len(phone) >= 7 else "****"
@@ -63,11 +75,17 @@ def run_agent(phone: str, language: str) -> dict:
         return practice.run(phone)
 
     messages = build_messages(phone, language)
-    used, summary = [], None
+    used, summary, nudged = [], None, False
     for _ in range(MAX_STEPS):
         msg = ai.chat_with_tools(ai.SUPER, messages, tools.TOOLS)
         if not msg.tool_calls:
-            return {"reply": ai.strip_thinking(msg.content or ""), "tools_used": used, "order_summary": summary}
+            reply = ai.strip_thinking(msg.content or "")
+            if is_stall(reply) and not nudged:  # it only promised to check: make it actually do it, once
+                nudged = True
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": NUDGE})
+                continue
+            return {"reply": reply, "tools_used": used, "order_summary": summary}
 
         messages.append({"role": "assistant", "content": msg.content or "",
                          "tool_calls": [{"id": tc.id, "type": "function",
