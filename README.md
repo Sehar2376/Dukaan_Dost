@@ -171,6 +171,7 @@ Each optional feature switches on when its setting is filled in; if it's empty, 
 | --- | --- | --- |
 | Real Nemotron AI | `NEBIUS_API_KEY` | Practice mode (rule-based, $0) |
 | Saved data | `FIREBASE_CREDENTIALS` (file path or JSON text) | In-memory data, lost on restart |
+| Fewer Firebase reads | `FIRESTORE_CACHE_SECONDS` (default 120) | Data is re-read from Firebase every 2 minutes |
 | Market price check | `TAVILY_API_KEY` | Clearly labelled sample results |
 | WhatsApp | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL` | Web chat only |
 | Nightly report on WhatsApp | `OWNER_WHATSAPP` (+ Twilio) | Report shown in the dashboard only |
