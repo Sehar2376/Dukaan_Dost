@@ -46,6 +46,8 @@ Examples:
 "Sham 7 baje" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "G" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "Kuch discount mil jayega?" -> {"language":"roman_urdu","intent":"bargain","urgent":false}
+"ptice kam?" -> {"language":"roman_urdu","intent":"bargain","urgent":false}
+"Price thori kam karo" -> {"language":"roman_urdu","intent":"bargain","urgent":false}
 "Do you deliver to DHA?" -> {"language":"english","intent":"faq","urgent":false}
 "کیک کی قیمت کیا ہے؟" -> {"language":"urdu","intent":"faq","urgent":false}
 "I need 3 boxes of brownies, kal tak mil jayenge?" -> {"language":"mixed","intent":"order","urgent":false}
