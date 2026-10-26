@@ -1,4 +1,4 @@
-<p align="center">
+__<p align="center">
   <img src="frontend/public/logo-full.png" alt="Dukaan Dost logo" width="260">
 </p>
 
@@ -164,7 +164,7 @@ npm run dev
 ```
 Open http://localhost:5173.
 
-**Tests:** `pytest -q` in `backend` runs 78 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
+**Tests:** `pytest -q` in `backend` runs 79 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
 
 ## Settings
 
