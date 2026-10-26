@@ -1,4 +1,4 @@
-__<p align="center">
+<p align="center">
   <img src="frontend/public/logo-full.png" alt="Dukaan Dost logo" width="260">
 </p>
 
