@@ -158,7 +158,9 @@ def _handle(phone: str, message: str) -> ChatOut:
             db.save_conversation(phone, c)
             reply, order_summary, used = result["reply"], result["order_summary"], result["tools_used"]
         else:
-            recent = [m for m in conv["messages"][:-1] if m["role"] in ("customer", "assistant", "owner")][-6:]
+            # our fixed "owner will confirm" lines are left out: a chat full of them makes Nano copy them
+            recent = [m for m in conv["messages"][:-1] if m["role"] in ("customer", "assistant", "owner")
+                      and m["text"] not in ai.OWNER_WILL_CONFIRM.values()][-6:]
             history = "\n".join(f"{'Customer' if m['role'] == 'customer' else 'Shop'}: {m['text'][:300]}" for m in recent)
             reply = ai.answer_faq(message, info["language"], db.shop_info_text(), shop["name"],
                                   shop.get("city", ""), history=history)

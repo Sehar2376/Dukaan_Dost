@@ -673,3 +673,34 @@ def test_faq_can_mention_the_real_loyalty_offer(monkeypatch):
     r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Ji, offer hai: har 5th order pe 10% discount.",
                                       "evidence": ["every 5th order gets 10% off"]}))
     assert r.startswith("Ji, offer hai")
+
+
+def test_agent_invented_refund_policy_is_never_sent(monkeypatch):
+    """Oct 26 Noor test: Super wrote a refund/replacement policy the shop never wrote down."""
+    monkeypatch.setattr(ai, "MOCK", False)
+    shop = db.get_shop()
+    db.save_catalog(dict(shop, policies=""), db.get_products(), [])  # a shop with no written policy
+    bad = NS(tool_calls=None, content="We don't process refunds. Contact us within 2 hours and we'll replace the item.")
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: bad)
+    out = agent.run_agent("03009990030", "roman_urdu", "complaint")
+    assert out["reply"] == ai.OWNER_WILL_CONFIRM["roman_urdu"] and "flag_owner" in out["tools_used"]
+
+
+def test_agent_real_policy_from_shop_info_is_allowed():
+    phone = "03009990031"
+    ok = "Custom cakes pe refund nahi hota, maafi chahti hoon."
+    assert agent.reply_problems(phone, ok, [], []) == []  # bakery policy: "No refunds on custom cakes"
+
+
+def test_faq_history_leaves_out_owner_will_confirm_lines(monkeypatch):
+    import main
+    seen = {}
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "over_budget", lambda: False)
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})
+    monkeypatch.setattr(ai, "answer_faq", lambda *a, history="", **k: seen.setdefault("h", history) or "Ji.")
+    phone = "03009990032"
+    db.add_message(phone, "customer", "Eggless?")
+    db.add_message(phone, "assistant", ai.OWNER_WILL_CONFIRM["roman_urdu"])
+    main.handle_message(phone, "Timing?")
+    assert "Eggless?" in seen["h"] and "owner se confirm" not in seen["h"]

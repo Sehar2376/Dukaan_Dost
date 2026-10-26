@@ -103,6 +103,11 @@ PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent|fisad)", re.IGNORECASE)
 OWNER_SAID = re.compile(r"\b(owner|malik|maalik)\s*(sahab|sahib|saheb)?\s*ne\b", re.IGNORECASE)
 OWNER_PROMISE = re.compile(r"\b(owner|malik|maalik)\s*(sahab|sahib|saheb)?\s*(ko|se|aap se|jald|contact|rabta)", re.IGNORECASE)
 SAFE_PRICE_REPLY = "Ji, is price ke liye main owner se confirm kar ke aap ko batati hoon. Shukriya!"
+# Promises about things the shop never wrote down (diet, money back, replacement, pickup...). Discounts are
+# left out here: bargaining talks about them all the time and the price guard above already checks the numbers.
+AGENT_RISKY = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|refunds?|exchange|replace\w*|"
+                         r"pickup|pick up|warranty|guarantee|free)\b", re.IGNORECASE)
+NOT_IN_SHOP = "is not in the shop's info"
 
 
 def _num(text: str) -> int:
@@ -152,6 +157,11 @@ def reply_problems(phone: str, reply: str, used: list, tool_results: list) -> li
     owner_spoke = any(m["role"] == "owner" for m in db.get_conversation(phone)["messages"])
     if OWNER_SAID.search(reply or "") and not owner_spoke:
         problems.append("the owner did not say anything in this chat - never put words in the owner's mouth")
+    shop = ai._norm(db.shop_info_text())
+    for word in AGENT_RISKY.findall(reply or ""):
+        if ai._norm(word)[:5] not in shop:
+            problems.append(f"'{word}' {NOT_IN_SHOP} - never promise or describe it; say the owner will confirm "
+                            "and call flag_owner")
     statements = [x for x in re.split(r"(?<=[.!?\n])", reply or "") if not x.strip().endswith("?")]
     if any(OWNER_PROMISE.search(x) for x in statements) and "flag_owner" not in used:
         problems.append("you told the customer about the owner but did not call flag_owner")
@@ -217,7 +227,9 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
             if problems:  # still wrong: never send a made-up price; alert the owner so the promise is true
                 tools.flag_owner(phone, "Assistant could not give a valid reply: " + "; ".join(problems)[:200], "question")
                 used.append("flag_owner")
-                if any("Rs " in p or "%" in p for p in problems):
+                if any(NOT_IN_SHOP in p for p in problems):  # an invented policy is never sent
+                    reply = ai.OWNER_WILL_CONFIRM.get(language, ai.OWNER_WILL_CONFIRM["roman_urdu"])
+                elif any("Rs " in p or "%" in p for p in problems):
                     reply = SAFE_PRICE_REPLY
             return {"reply": reply, "tools_used": used, "order_summary": summary}
 
