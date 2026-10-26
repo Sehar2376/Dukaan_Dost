@@ -593,3 +593,77 @@ def test_ai_client_has_no_hidden_retries(monkeypatch):
     monkeypatch.setenv("NEBIUS_API_KEY", "test")
     ai._clients.clear()
     assert ai.client().max_retries == 0
+
+
+# ------------------------------------------------------------------ FAQ answers are checked in code (Oct 26 Noor test)
+def _faq(monkeypatch, reply_json: str, language: str = "roman_urdu") -> str:
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat", lambda *a, **k: reply_json)
+    shop = db.get_shop()
+    return ai.answer_faq("q", language, db.shop_info_text(), shop["name"], shop.get("city", ""))
+
+
+def test_faq_answer_with_real_evidence_is_sent(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Ji, delivery Rs 200 hai.",
+                                      "evidence": ["Delivery fee: Rs 200"]}))
+    assert r == "Ji, delivery Rs 200 hai." and "[NEEDS_OWNER]" not in r
+
+
+def test_faq_made_up_evidence_goes_to_owner(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Ji, hum cake tasting bhi karwate hain.",
+                                      "evidence": ["We offer free cake tasting every Sunday"]}))
+    assert r.endswith("[NEEDS_OWNER]") and "tasting" not in r
+
+
+def test_faq_real_eggless_answer_from_shop_faq_is_sent(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Ji, eggless Rs 300 extra mein, 2 din pehle.",
+                                      "evidence": ["Yes, eggless is available for Rs 300 extra with 2 days notice."]}))
+    assert r.startswith("Ji, eggless")
+
+
+def test_faq_invented_discount_goes_to_owner(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer",
+                                      "reply": "Refund nahi, lekin hum 10% se 15% discount dete hain.",
+                                      "evidence": ["No refunds on custom cakes"]}))
+    assert r.endswith("[NEEDS_OWNER]") and "%" not in r
+
+
+def test_faq_wrong_price_goes_to_owner(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Chocolate cake Rs 1,500 ka hai.",
+                                      "evidence": ["Chocolate Fudge Cake 1kg"]}))
+    assert r.endswith("[NEEDS_OWNER]")
+
+
+def test_faq_unclear_message_asks_back_without_owner(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "clarify", "reply": "Ji, aap ka matlab kya hai?", "evidence": []}))
+    assert r == "Ji, aap ka matlab kya hai?"
+
+
+def test_faq_unknown_uses_fixed_owner_line_in_customer_language(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "unknown", "reply": "Policy nahi hai lekin 10% de dete hain"}), "urdu")
+    assert r.startswith("جی") and r.endswith("[NEEDS_OWNER]") and "10%" not in r
+
+
+def test_faq_broken_json_never_guesses(monkeypatch):
+    r = _faq(monkeypatch, "Ji haan eggless bhi hai")
+    assert r.endswith("[NEEDS_OWNER]")
+
+
+def test_faq_works_with_urdu_script_shop_info():
+    info = "Shop: نور بیکری\nTimings: صبح 9 سے رات 10 بجے تک\nDelivery fee: Rs 200"
+    kind, problems = ai.check_faq_answer({"type": "answer", "reply": "Subah 9 se raat 10 baje tak.",
+                                          "evidence": ["صبح 9 سے رات 10 بجے تک"]}, info)
+    assert kind == "answer" and not problems
+
+
+def test_faq_claim_with_unrelated_evidence_goes_to_owner(monkeypatch):
+    """Sugar-free is not in the bakery's info, so quoting a real price line doesn't make the claim true."""
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Ji, Chocolate Fudge Cake sugar-free bhi milta hai.",
+                                      "evidence": ["Chocolate Fudge Cake 1kg: Rs 2,200"]}))
+    assert r.endswith("[NEEDS_OWNER]")
+
+
+def test_faq_can_mention_the_real_loyalty_offer(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Ji, offer hai: har 5th order pe 10% discount.",
+                                      "evidence": ["every 5th order gets 10% off"]}))
+    assert r.startswith("Ji, offer hai")
