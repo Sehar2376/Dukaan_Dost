@@ -99,6 +99,8 @@ All AI calls go through the **Nebius Token Factory** OpenAI-compatible API. We r
 - Ultra is called only on demand and cached;
 - a $0 **practice mode** (no key needed) uses the same tools with simple rules, for testing.
 
+**Real cost so far:** one month of building and testing (26 Sep – 26 Oct 2026) cost about **$0.15** on Nebius Token Factory, according to our Nebius billing page. Nano handles most messages, so it cost about $0.01; Ultra is called rarely and cached, so it cost under $0.01.
+
 ## Architecture
 
 ```
