@@ -4,6 +4,8 @@ Loop: send the conversation + tool list to Nemotron Super. If it asks for tools,
 Python, send the results back, and ask again. Stop when it writes a normal reply (max 6 steps).
 """
 import json
+import math
+import re
 
 import ai
 import db
@@ -29,15 +31,27 @@ def mask(phone: str) -> str:
     return phone[:4] + "-****" + phone[-3:] if len(phone) >= 7 else "****"
 
 
+def loyalty_text(r: dict) -> str:
+    if not r.get("active"):
+        return ""
+    if r["eligible"]:
+        return (f" LOYALTY: this will be their {tools.nth(r['order_number'])} order, so it gets the loyalty reward "
+                f"of {r['percent']:g}% off (the system adds it to the order total). Tell them happily.")
+    return (f" LOYALTY: this will be their {tools.nth(r['order_number'])} order; {r['orders_until_reward']} more "
+            f"order(s) after this one until their {r['reward_percent']:g}% loyalty reward.")
+
+
 def customer_info(phone: str) -> str:
     c = tools.get_customer(phone)
     if not c["returning"]:
-        return "New customer (no previous orders)."
-    text = f"Returning customer: {c['name']}. Saved addresses: {c['addresses']}."
+        return "New customer (no previous orders)." + loyalty_text(tools.loyalty(phone))
+    address = c["addresses"][0] if c["addresses"] else "none saved"
+    text = (f"Returning customer. Saved name: {c['name']}. Saved address: {address}. "
+            f"Other saved addresses: {c['addresses'][1:] or 'none'}.")
     if c["last_order"]:
         items = ", ".join(f"{i['quantity']} x {i['name']}" for i in c["last_order"]["items"])
         text += f" Last order: {items} (Rs {c['last_order']['total']:,})."
-    return text
+    return text + loyalty_text(c["loyalty"])
 
 
 def draft_info(phone: str) -> str:
@@ -76,6 +90,78 @@ def build_messages(phone: str, language: str) -> list[dict]:
     return messages
 
 
+# ------------------------------------------------------------------ reply guards (checked in code)
+# The model only writes the words. Every "Rs" amount and "%" in its reply must be one the system can
+# explain (a real price, an allowed discount, the delivery fee, a total from a tool). Otherwise it is
+# asked to fix the reply; if it still can't, the owner is alerted and a safe reply is sent instead.
+AMOUNT = re.compile(r"(?:\brs\.?|\brupees?|rupay|rupaye|pkr|₨)\s*([\d][\d,]*)|([\d][\d,]*)\s*(?:rs\b|rupees?|rupay|rupaye|pkr)",
+                    re.IGNORECASE)
+PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent|fisad)", re.IGNORECASE)
+OWNER_SAID = re.compile(r"\b(owner|malik|maalik)\s*(sahab|sahib|saheb)?\s*ne\b", re.IGNORECASE)
+OWNER_PROMISE = re.compile(r"\b(owner|malik|maalik)\s*(sahab|sahib|saheb)?\s*(ko|se|aap se|jald|contact|rabta)", re.IGNORECASE)
+SAFE_PRICE_REPLY = "Ji, is price ke liye main owner se confirm kar ke aap ko batati hoon. Shukriya!"
+
+
+def _num(text: str) -> int:
+    return int(text.replace(",", "")) if text.replace(",", "").isdigit() else -1
+
+
+def allowed_numbers(phone: str, tool_results: list) -> tuple[set, set]:
+    """(amounts, percents) the reply may use, all calculated in code."""
+    shop = db.get_shop()
+    conv = db.get_conversation(phone)
+    reward = tools.loyalty(phone)
+    fee = int(shop.get("delivery_fee", 0) or 0)
+    amounts, percents = {fee}, {0, 100}  # 100: "100% fresh"
+    if reward["active"]:
+        percents.add(reward["reward_percent"])
+    for p in db.get_products():
+        mx = float(p.get("max_discount_percent", 0) or 0)
+        agreed = conv["discounts"].get(p["id"], {}).get("percent", 0)
+        pcts = {0, mx, math.ceil(mx / 2) if mx else 0, agreed, reward["percent"]}
+        percents |= {mx, math.ceil(mx / 2) if mx else 0, agreed}
+        for pct in pcts:
+            unit = round(p["price"] * (1 - pct / 100))
+            for q in range(1, 21):  # 1-20 boxes/cakes, with or without delivery
+                amounts |= {unit * q, unit * q + fee, (p["price"] - unit) * q}
+    c = db.get_customer(phone) or {}
+    last = db.get_order(c["last_order_id"]) if c.get("last_order_id") else None
+    if last:
+        amounts |= {last.get("total", 0), last.get("subtotal", 0)}
+    sources = [db.shop_info_text(), json.dumps(conv.get("draft_order") or {})] + [json.dumps(r) for r in tool_results]
+    # numbers the customer gave as their budget may be repeated back ("Rs 3,000 ke budget mein...")
+    sources += [m["text"] for m in conv["messages"] if m["role"] == "customer" and "budget" in m["text"].lower()]
+    for src in sources:
+        amounts |= {int(n) for n in re.findall(r"\d+", src.replace(",", ""))}
+    return amounts, percents
+
+
+def reply_problems(phone: str, reply: str, used: list, tool_results: list) -> list[str]:
+    amounts, percents = allowed_numbers(phone, tool_results)
+    problems = []
+    for a, b in AMOUNT.findall(reply or ""):
+        n = _num(a or b)
+        if n >= 0 and n not in amounts:
+            problems.append(f"Rs {n:,} is not a price the system allows")
+    for pct in PERCENT.findall(reply or ""):
+        if float(pct) not in percents:
+            problems.append(f"{pct}% is not a discount the owner allows")
+    owner_spoke = any(m["role"] == "owner" for m in db.get_conversation(phone)["messages"])
+    if OWNER_SAID.search(reply or "") and not owner_spoke:
+        problems.append("the owner did not say anything in this chat - never put words in the owner's mouth")
+    statements = [x for x in re.split(r"(?<=[.!?\n])", reply or "") if not x.strip().endswith("?")]
+    if any(OWNER_PROMISE.search(x) for x in statements) and "flag_owner" not in used:
+        problems.append("you told the customer about the owner but did not call flag_owner")
+    return problems
+
+
+def guard_note(problems: list[str]) -> str:
+    return ("SYSTEM NOTE: your last reply was not sent because " + "; ".join(problems) + ". "
+            "Rewrite it using ONLY prices, discounts and totals returned by tools (call check_discount or "
+            "preview_order if you need a new number). If the owner really needs to know, call flag_owner first. "
+            "Do not mention this note.")
+
+
 DISCOUNT_NUDGE = ("SYSTEM NOTE: the customer asked for a lower price. Call check_discount now for the product "
                   "they are buying (see ORDER IN PROGRESS or the chat) and offer exactly what it returns.")
 
@@ -88,7 +174,8 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
         return practice.run(phone)
 
     messages = build_messages(phone, language)
-    used, summary, nudged, discount_nudged = [], None, False, False
+    used, summary, nudged, discount_nudged, guarded = [], None, False, False, False
+    results = []  # every tool result this turn: numbers in them are allowed in the reply
     for _ in range(MAX_STEPS):
         msg = ai.chat_with_tools(ai.SUPER, messages, tools.TOOLS)
         if not msg.tool_calls:
@@ -104,6 +191,17 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": DISCOUNT_NUDGE})
                 continue
+            problems = reply_problems(phone, reply, used, results)
+            if problems and not guarded:  # made-up price or a false "owner" line: ask it to fix the reply, once
+                guarded = True
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": guard_note(problems)})
+                continue
+            if problems:  # still wrong: never send a made-up price; alert the owner so the promise is true
+                tools.flag_owner(phone, "Assistant could not give a valid reply: " + "; ".join(problems)[:200], "question")
+                used.append("flag_owner")
+                if any("Rs " in p or "%" in p for p in problems):
+                    reply = SAFE_PRICE_REPLY
             return {"reply": reply, "tools_used": used, "order_summary": summary}
 
         messages.append({"role": "assistant", "content": msg.content or "",
@@ -118,6 +216,7 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
                 args = {}
             result = tools.run_tool(tc.function.name, args, phone)
             used.append(tc.function.name)
+            results.append(result)
             if tc.function.name == "preview_order" and result.get("ok"):
                 summary = result["summary"]  # the frontend shows this as the order card
             messages.append({"role": "tool", "tool_call_id": tc.id,

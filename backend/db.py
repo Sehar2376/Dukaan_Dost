@@ -347,6 +347,12 @@ def shop_info_text() -> str:
         f"Notice: {s.get('min_order_notice', '')}",
         f"Payment: {', '.join(s.get('payment_methods', []))}",
         f"Policies: {s.get('policies', '')}",
+    ]
+    every, pct = int(s.get("loyalty_every", 5) or 0), float(s.get("loyalty_percent", 10) or 0)
+    if every >= 2 and pct > 0:
+        lines.append(f"Loyalty reward: every {every}th order gets {pct:g}% off (applied automatically, "
+                     "not added on top of a bargaining discount)")
+    lines += [
         "Products:",
     ]
     for p in get_products():

@@ -1,5 +1,6 @@
 """Dukaan Dost backend. Run:  uvicorn main:app --reload   then open http://localhost:8000/docs"""
 import os
+import re
 import threading
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
@@ -100,6 +101,20 @@ def _mid_order(conv: dict, intent: str) -> bool:
         return False
 
 
+CONFIRM_WORDS = re.compile(r"\b(confirm|confirmed|order kar|order kardo|order kar do|book kar|place kar)\b|کنفرم",
+                           re.IGNORECASE)
+
+
+def looks_like_confirm(message: str) -> bool:
+    """'Haan, confirm' or 'ji kar dein' must always reach the order agent, which checks for a saved order in
+    code. The FAQ path can't see orders, so it must never be the one to answer (it could wrongly say
+    'order confirm ho gaya')."""
+    import tools
+
+    text = message.strip()
+    return bool(CONFIRM_WORDS.search(text)) or (len(text.split()) <= 4 and bool(tools.YES.search(text.lower())))
+
+
 def _handle(phone: str, message: str) -> ChatOut:
     db.add_message(phone, "customer", message)
     conv = db.get_conversation(phone)
@@ -133,7 +148,8 @@ def _handle(phone: str, message: str) -> ChatOut:
                        **{k: info[k] for k in ("language", "intent", "urgent")})
 
     try:
-        if info["intent"] in AGENT_INTENTS or conv.get("draft_order") or _mid_order(conv, info["intent"]):
+        if (info["intent"] in AGENT_INTENTS or conv.get("draft_order") or _mid_order(conv, info["intent"])
+                or looks_like_confirm(message)):
             route.append("super")
             result = agent.run_agent(phone, info["language"], info["intent"])  # Nemotron Super + tools
             c = db.get_conversation(phone)
@@ -386,6 +402,9 @@ def setup_save(body: SetupSave):
             p["in_stock"] = True
         p.pop("id", None)  # ids are re-numbered p1, p2, ... on save
         p["max_discount_percent"] = max(0, min(50, float(p.get("max_discount_percent") or 0)))
+    # loyalty reward: every Nth order gets X% off (0 = off). Kept small so the owner never loses money by mistake.
+    body.shop["loyalty_every"] = max(0, min(50, int(body.shop.get("loyalty_every", 5) or 0)))
+    body.shop["loyalty_percent"] = max(0, min(30, float(body.shop.get("loyalty_percent", 10) or 0)))
     db.save_catalog(body.shop, body.products, body.faqs)
     db.store.delete_all("market")  # product ids change on save, so old price checks no longer match
     return {"ok": True, "products": len(body.products), "faqs": len(body.faqs)}

@@ -55,7 +55,32 @@ def get_customer(phone: str) -> dict:
         "addresses": c.get("addresses", []),
         "completed_orders": c.get("completed_orders", 0),
         "last_order": {"items": last["items"], "total": last["total"]} if last else None,
+        "loyalty": loyalty(phone),
     }
+
+
+# ------------------------------------------------------------------ loyalty reward (checked in code)
+def nth(n: int) -> str:
+    """1 -> 1st, 2 -> 2nd, 11 -> 11th"""
+    end = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{end}"
+
+
+def loyalty(phone: str) -> dict:
+    """Every Nth order gets X% off. N and X are set by the owner (shop.loyalty_every, shop.loyalty_percent).
+
+    Counts this customer's confirmed orders that were not cancelled, so the AI can never invent a reward."""
+    shop = db.get_shop()
+    every = int(shop.get("loyalty_every", 5) or 0)
+    pct = float(shop.get("loyalty_percent", 10) or 0)
+    c = db.get_customer(phone) or {}
+    past = max(0, int(c.get("total_orders", 0)) - int(c.get("cancelled_orders", 0)))
+    if every < 2 or pct <= 0:
+        return {"active": False, "eligible": False, "percent": 0, "order_number": past + 1}
+    next_number = past + 1
+    to_go = (every - next_number % every) % every  # 0 = this order gets the reward
+    return {"active": True, "eligible": to_go == 0, "percent": pct if to_go == 0 else 0,
+            "reward_percent": pct, "every": every, "order_number": next_number, "orders_until_reward": to_go}
 
 
 # ------------------------------------------------------------------ 3. check_discount
@@ -81,10 +106,16 @@ def check_discount(phone: str, product_id: str, requested_percent: float = 0) ->
     conv["discounts"][product_id] = state
     db.save_conversation(phone, conv)
 
-    new_price = round(p["price"] * (1 - offer / 100))
+    reward = loyalty(phone)
+    best = max(offer, reward["percent"])  # loyalty reward and bargaining never add up: the bigger one wins
+    new_price = round(p["price"] * (1 - best / 100))
     result = {"product_id": product_id, "name": p["name"], "original_price": p["price"],
-              "discount_percent": offer, "new_price": new_price, "is_final_offer": final}
-    if state["attempts"] >= 3:
+              "discount_percent": best, "new_price": new_price, "is_final_offer": final}
+    if reward["percent"] and reward["percent"] >= offer:
+        result["is_final_offer"] = True
+        result["note"] = (f"This is the customer's loyalty reward order ({nth(reward['order_number'])} order): "
+                          f"{reward['percent']:g}% off already applies. Bargaining does not add more on top.")
+    elif state["attempts"] >= 3:
         result["note"] = "Customer keeps pushing. Politely hold this price and offer to connect the owner."
     return result
 
@@ -185,6 +216,7 @@ def preview_order(phone: str, items: list[dict], customer_name: str, address: st
     """Build the order summary in code. Saved as a draft until the customer confirms."""
     shop = db.get_shop()
     conv = db.get_conversation(phone)
+    reward = loyalty(phone)
     lines, problems = [], []
 
     for it in items or []:
@@ -196,7 +228,8 @@ def preview_order(phone: str, items: list[dict], customer_name: str, address: st
         if not p.get("in_stock", True):
             problems.append(f"{p['name']} is out of stock")
             continue
-        pct = conv["discounts"].get(p["id"], {}).get("percent", 0)  # only what check_discount agreed
+        bargain = conv["discounts"].get(p["id"], {}).get("percent", 0)  # only what check_discount agreed
+        pct = max(bargain, reward["percent"])  # loyalty reward or bargain, whichever is bigger (never both)
         unit = round(p["price"] * (1 - pct / 100))
         lines.append({"product_id": p["id"], "name": p["name"], "quantity": qty, "unit_price": unit,
                       "original_unit_price": p["price"], "discount_percent": pct,
@@ -228,16 +261,20 @@ def preview_order(phone: str, items: list[dict], customer_name: str, address: st
         "total": after_discount + fee, "cost_total": sum(line["line_cost"] for line in lines),
         "address": address.strip(), "delivery_time": when,
         "payment_type": "cod" if "cod" in payment_type.lower() or "cash" in payment_type.lower() else payment_type.lower(),
+        "loyalty_percent": reward["percent"],
     }
     draft["profit"] = after_discount - draft["cost_total"]
     conv["draft_order"] = draft
     db.save_conversation(phone, conv)
 
     address_tip = missing_address_parts(address)
+    loyalty_note = (f"This is their {nth(reward['order_number'])} order, so the loyalty reward ({reward['percent']:g}% off) "
+                    "is included. Tell them happily. " if reward["percent"] else "")
     return {"ok": True, "summary": {k: draft[k] for k in ("items", "subtotal", "discount", "delivery_fee",
-                                                          "total", "address", "delivery_time", "payment_type")},
+                                                          "total", "address", "delivery_time", "payment_type",
+                                                          "loyalty_percent")},
             "address_incomplete": address_tip,
-            "note": "Show this summary and ask the customer to confirm. "
+            "note": "Show this summary and ask the customer to confirm. " + loyalty_note
                     + ("Also ask for house/block, street and a landmark. " if address_tip else "")}
 
 
