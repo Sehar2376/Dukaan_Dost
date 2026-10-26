@@ -566,3 +566,30 @@ def test_check_karte_hain_stall_and_typo_discount_are_nudged(monkeypatch):
     out = agent.run_agent(phone, "roman_urdu", "faq")
     assert agent.is_stall("Discount ke liye check karte hain.")
     assert "check_discount" in out["tools_used"] and out["reply"].endswith("Rs 1,140.")
+
+
+def test_product_ids_never_reach_the_customer(monkeypatch):
+    """Oct 26 live test: the menu reply showed 'Chocolate Cake 1kg - Rs 2,200 [p1]'."""
+    import main
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "over_budget", lambda: False)
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})
+    monkeypatch.setattr(ai, "answer_faq", lambda *a, **k: "Chocolate Fudge Cake 1kg - Rs 2,200 [p1]\nCookies - Rs 750 [p7]")
+    out = main.handle_message("03009990020", "Menu bhej dein")
+    assert "[p" not in out.reply and "Rs 2,200" in out.reply
+
+
+def test_slow_agent_stops_before_server_timeout(monkeypatch):
+    """If Nebius is very slow, the agent stops, alerts the owner and still replies."""
+    clock = iter([0, 0, 31, 31, 31])
+    monkeypatch.setattr(agent.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: NS(content="", tool_calls=[_call("get_products", {}, 1)]))
+    out = agent.run_agent("03009990021", "roman_urdu")
+    assert out["tools_used"] == ["get_products"] and out["reply"] and db.list_flags()
+
+
+def test_ai_client_has_no_hidden_retries(monkeypatch):
+    monkeypatch.setenv("NEBIUS_API_KEY", "test")
+    ai._clients.clear()
+    assert ai.client().max_retries == 0
