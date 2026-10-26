@@ -543,3 +543,26 @@ def test_returning_customer_info_has_saved_name_address_and_loyalty():
     _orders(phone, 4)
     info = agent.customer_info(phone)
     assert "Saved name: Ayesha" in info and GOOD in info and "5th order" in info and "10% off" in info
+
+
+def test_check_karte_hain_stall_and_typo_discount_are_nudged(monkeypatch):
+    """'ptice kam?' labelled faq, and Super only said 'Discount ke liye check karte hain' (Oct 26 live test)."""
+    seen = []
+
+    def fake(model, messages, tl):
+        seen.append(messages[-1]["content"])
+        if len(seen) == 1:
+            return NS(tool_calls=None, content="Discount ke liye check karte hain.")
+        if len(seen) == 2:
+            return NS(tool_calls=None, content="Ji, abhi batate hain.")
+        if len(seen) == 3:
+            return NS(tool_calls=[_call("check_discount", {"product_id": "p8"}, 1)], content="")
+        return NS(tool_calls=None, content="Aap ke liye 5% kam: Rs 1,140.")
+
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", fake)
+    phone = "03009990017"
+    say(phone, "ptice kam?")
+    out = agent.run_agent(phone, "roman_urdu", "faq")
+    assert agent.is_stall("Discount ke liye check karte hain.")
+    assert "check_discount" in out["tools_used"] and out["reply"].endswith("Rs 1,140.")
