@@ -27,7 +27,11 @@ function ShopSetup() {
     setBusy(true);
     setError(null);
     try {
-      setDraft(await api("/setup/parse", { method: "POST", body: { text } }));
+      const parsed = await api("/setup/parse", { method: "POST", body: { text } });
+      const now = current.data?.shop || {};
+      // keep the owner's current loyalty reward unless they change it below
+      parsed.shop = { loyalty_every: now.loyalty_every ?? 5, loyalty_percent: now.loyalty_percent ?? 10, ...parsed.shop };
+      setDraft(parsed);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -100,6 +104,8 @@ function ShopSetup() {
           <div className="mb-5 grid gap-4 md:grid-cols-2">
             <Field label="Shop name"><input value={draft.shop?.name || ""} onChange={(e) => setDraft({ ...draft, shop: { ...draft.shop, name: e.target.value } })} className={inputCls} /></Field>
             <Field label="Delivery fee (Rs)"><input type="number" value={draft.shop?.delivery_fee ?? 0} onChange={(e) => setDraft({ ...draft, shop: { ...draft.shop, delivery_fee: Number(e.target.value) } })} className={inputCls} /></Field>
+            <Field label="Loyalty reward: every Nth order (0 = off)"><input type="number" min="0" max="50" value={draft.shop?.loyalty_every ?? 5} onChange={(e) => setDraft({ ...draft, shop: { ...draft.shop, loyalty_every: Number(e.target.value) } })} className={inputCls} /></Field>
+            <Field label="Loyalty reward discount (%)"><input type="number" min="0" max="30" value={draft.shop?.loyalty_percent ?? 10} onChange={(e) => setDraft({ ...draft, shop: { ...draft.shop, loyalty_percent: Number(e.target.value) } })} className={inputCls} /></Field>
             <p className="text-sm text-slate-600"><span className="text-slate-400">Timings:</span> {draft.shop?.timings || "—"}</p>
             <p className="text-sm text-slate-600"><span className="text-slate-400">Delivery areas:</span> {(draft.shop?.delivery_areas || []).join(", ") || "—"}</p>
           </div>
@@ -118,7 +124,7 @@ function ShopSetup() {
         </Card>
       )}
 
-      <Card title="Current menu" icon={Store} subtitle={shop ? `${shop.name} · ${shop.timings || ""} · Delivery ${rs(shop.delivery_fee)}` : null}
+      <Card title="Current menu" icon={Store} subtitle={shop ? `${shop.name} · ${shop.timings || ""} · Delivery ${rs(shop.delivery_fee)}${(shop.loyalty_every ?? 5) >= 2 && (shop.loyalty_percent ?? 10) > 0 ? ` · Loyalty: every ${shop.loyalty_every ?? 5}th order ${shop.loyalty_percent ?? 10}% off` : ""}` : null}
         action={<Button size="sm" variant="ghost" icon={RotateCcw} onClick={restore} disabled={busy}>Restore sample menu</Button>}>
         {current.loading && !current.data ? <LoadingRows /> : !current.data?.products?.length ? <EmptyState title="No products yet" /> : (
           <Table head={["Product", "Price", "Cost", "Max discount", "Stock"]}>

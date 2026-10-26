@@ -39,6 +39,7 @@ Most WhatsApp bots are English FAQ menus or a general chatbot with a prompt. Duk
 3. **Fake COD protection.** Every cash-on-delivery order gets a risk level with plain reasons before the owner prepares it.
 4. **The owner stays in control.** Complaints, big or urgent orders and unknown questions go to the owner, who can take over any chat.
 5. **Right-sized AI.** Nano handles every message, Super runs the order agent, and Ultra is used only for monthly advice, with daily budget limits, so it's cheap enough for a small shop.
+6. **Loyalty reward.** Every 5th order gets 10% off, counted in code (the owner can change the numbers).
 
 ## Try it in 2 minutes
 
@@ -163,7 +164,7 @@ npm run dev
 ```
 Open http://localhost:5173.
 
-**Tests:** `pytest -q` in `backend` runs 70 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
+**Tests:** `pytest -q` in `backend` runs 78 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
 
 ## Settings
 

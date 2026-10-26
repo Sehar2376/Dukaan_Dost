@@ -10,6 +10,8 @@
     "payment_methods": ["Cash on delivery", "JazzCash", "Easypaisa", "Bank transfer"],
     "policies": "No refunds on custom cakes. Orders can be changed up to 12 hours before delivery.",
     "large_order_threshold": 8000,
+    "loyalty_every": 5,
+    "loyalty_percent": 10,
     "opening_hours": {
       "mon": ["10:00", "21:00"], "tue": ["10:00", "21:00"], "wed": ["10:00", "21:00"],
       "thu": ["10:00", "21:00"], "fri": ["15:00", "21:00"], "sat": ["10:00", "21:00"],
