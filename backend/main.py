@@ -101,6 +101,7 @@ def _mid_order(conv: dict, intent: str) -> bool:
         return False
 
 
+PRODUCT_ID = re.compile(r"[ \t]*\[p\d+\]")
 CONFIRM_WORDS = re.compile(r"\b(confirm|confirmed|order kar|order kardo|order kar do|book kar|place kar)\b|کنفرم",
                            re.IGNORECASE)
 
@@ -173,6 +174,7 @@ def _handle(phone: str, message: str) -> ChatOut:
     elif info["intent"] == "complaint" or (info["urgent"] and info["intent"] not in ("greeting", "faq")):
         db.add_flag("complaint" if info["intent"] == "complaint" else "urgent", phone, message[:160])
         needs_owner = True
+    reply = PRODUCT_ID.sub("", reply).strip()  # never show internal ids like [p1] to the customer
     if not reply:
         reply = FALLBACK_REPLY
 

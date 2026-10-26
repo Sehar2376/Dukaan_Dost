@@ -36,7 +36,8 @@ def client(base_url: str | None = None):
     if url not in _clients:
         from openai import OpenAI
 
-        _clients[url] = OpenAI(base_url=url, api_key=os.environ["NEBIUS_API_KEY"], timeout=30)
+        _clients[url] = OpenAI(base_url=url, api_key=os.environ["NEBIUS_API_KEY"], timeout=30,
+                               max_retries=0)  # our own retry below; the library's hidden retries made slow calls take minutes
     return _clients[url]
 
 
@@ -124,7 +125,7 @@ def chat_with_tools(model: str, messages: list[dict], tools: list[dict]):
     last_err = None
     for attempt in range(2):
         try:
-            r = client().chat.completions.create(
+            r = client().with_options(timeout=20).chat.completions.create(
                 model=model, messages=messages, tools=tools, tool_choice="auto",
                 temperature=0.2, max_tokens=700,
                 extra_body={"chat_template_kwargs": {"enable_thinking": False}},
@@ -159,7 +160,7 @@ def classify(message: str) -> dict:
     for attempt in range(2):
         try:
             extra = "" if attempt == 0 else "\nReturn ONLY the JSON object, nothing else."
-            raw = chat(NANO, system + extra, message, temperature=0, max_tokens=80)
+            raw = chat(NANO, system + extra, message, temperature=0, max_tokens=80, timeout=15, retries=1)
             return _clean(extract_json(raw))
         except (ValueError, json.JSONDecodeError):
             continue
@@ -170,10 +171,11 @@ def classify(message: str) -> dict:
 
 # ---------------------------------------------------------------- FAQ reply
 LANG_INSTRUCTIONS = {
-    "roman_urdu": "Roman Urdu (Urdu written in English letters), like the customer.",
-    "urdu": "Urdu script.",
-    "english": "Simple English.",
-    "mixed": "The same mix of Roman Urdu and English the customer used.",
+    "roman_urdu": ("Roman Urdu (Urdu written in English letters), like the customer. Use ONLY English letters, "
+                   "never Urdu script, even when SHOP INFO is written in Urdu script: write those names in English letters."),
+    "urdu": "Urdu script only. Product names may stay in English letters.",
+    "english": "Simple English only.",
+    "mixed": "The same mix of Roman Urdu and English the customer used, in English letters only.",
 }
 
 
@@ -191,7 +193,7 @@ def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city
     )
     if history:
         system += "\n\nRECENT CHAT (oldest first, for context only):\n" + history
-    return chat(NANO, system, message, temperature=0.3, max_tokens=250)
+    return chat(NANO, system, message, temperature=0.3, max_tokens=250, timeout=15)
 
 
 # ---------------------------------------------------------------- owner setup (F5)

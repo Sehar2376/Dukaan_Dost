@@ -6,12 +6,14 @@ Python, send the results back, and ask again. Stop when it writes a normal reply
 import json
 import math
 import re
+import time
 
 import ai
 import db
 import tools
 
 MAX_STEPS = 6
+DEADLINE_SECONDS = 30  # stop before the server's own time limit, so the customer always gets a reply
 HISTORY = 12  # how many earlier messages the model sees
 
 # Replies that only promise to do something ("ek moment, products dhundhta hoon") instead of doing it.
@@ -187,7 +189,10 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
     messages = build_messages(phone, language)
     used, summary, nudged, discount_nudged, guarded = [], None, False, False, False
     results = []  # every tool result this turn: numbers in them are allowed in the reply
+    start = time.monotonic()
     for _ in range(MAX_STEPS):
+        if time.monotonic() - start > DEADLINE_SECONDS:
+            break  # too slow today: alert the owner below instead of letting the request time out
         msg = ai.chat_with_tools(ai.SUPER, messages, tools.TOOLS)
         if not msg.tool_calls:
             reply = ai.strip_thinking(msg.content or "")
