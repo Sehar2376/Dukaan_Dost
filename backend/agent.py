@@ -17,7 +17,8 @@ HISTORY = 12  # how many earlier messages the model sees
 # Replies that only promise to do something ("ek moment, products dhundhta hoon") instead of doing it.
 STALL_WORDS = ("ek moment", "ek sec", "ek minute", "abhi dekhta", "abhi dekhti", "check karta", "check karti",
                "check kar ke", "dhundhta", "dhundhti", "nikalta", "nikalti", "product id", "product_id",
-               "let me check", "one moment", "please wait")
+               "let me check", "one moment", "please wait", "check karte", "check krte", "check karke",
+               "dekhte hain", "dekh ke batat", "pata karte", "pata kar ke")
 NUDGE = ("SYSTEM NOTE: do not tell the customer you will check something. Call the tool you need now "
          "(product ids are in SHOP INFO, e.g. [p1]) and then reply with the result. Never mention ids or tools.")
 
@@ -162,6 +163,16 @@ def guard_note(problems: list[str]) -> str:
             "Do not mention this note.")
 
 
+# A customer asking for a lower price, even with typos ("ptice kam?") or when Nano labels it something else.
+BARGAIN_WORDS = re.compile(r"\b(kam|kum|discount|disc|sasta|sasti|less|cheaper|last price|best price|rate kam|"
+                           r"rs \d+ (?:mein|me|main)|\d+ (?:mein|me|main) de)\b|کم|رعایت", re.IGNORECASE)
+
+
+def asked_for_discount(phone: str) -> bool:
+    msgs = [m for m in db.get_conversation(phone)["messages"] if m["role"] == "customer"]
+    return bool(msgs) and bool(BARGAIN_WORDS.search(msgs[-1]["text"]))
+
+
 DISCOUNT_NUDGE = ("SYSTEM NOTE: the customer asked for a lower price. Call check_discount now for the product "
                   "they are buying (see ORDER IN PROGRESS or the chat) and offer exactly what it returns.")
 
@@ -185,7 +196,8 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": NUDGE})
                 continue
-            if intent == "bargain" and "check_discount" not in used and not discount_nudged:
+            if ((intent == "bargain" or asked_for_discount(phone)) and "check_discount" not in used
+                    and not discount_nudged):
                 # bargaining must always go through the owner's limits in code, never the model's own answer
                 discount_nudged = True
                 messages.append({"role": "assistant", "content": reply})
