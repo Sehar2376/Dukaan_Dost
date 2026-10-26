@@ -179,6 +179,7 @@ LANG_INSTRUCTIONS = {
 }
 
 
+NEEDS_OWNER_TAG = "[NEEDS_OWNER]"
 OWNER_WILL_CONFIRM = {
     "roman_urdu": "Ji, ye main owner se confirm kar ke aap ko batati hoon. Shukriya!",
     "mixed": "Ji, ye main owner se confirm kar ke aap ko batati hoon. Shukriya!",
@@ -212,10 +213,14 @@ def _evidence_ok(line: str, shop: str) -> bool:
 def check_faq_answer(data: dict, shop_info: str) -> tuple[str, list[str]]:
     """Decide in code whether Nano's FAQ answer may be sent. Returns (kind, problems).
 
-    kind: "answer" (send it), "small" (greeting / clarifying question, send it) or "unknown" (ask the owner)."""
+    kind: "answer" (send it), "small" (greeting / clarifying question, send it) or "unknown" (ask the owner).
+    Hard checks (any one fails -> owner): every Rs amount is in the shop info, every % is an offer written
+    in the shop info, and no risky topic (eggless, refund, discount...) the shop info never mentions.
+    Evidence lines are only a soft signal: real Nano often rewrites Urdu-script info in English letters,
+    so a missing exact quote alone must not block a correct answer."""
     shop = _norm(shop_info)
     reply = str(data.get("reply") or "").strip()
-    kind = str(data.get("type") or "").lower()
+    kind = str(data.get("type") or "answer").lower()
     problems = []
     numbers = set(shop.split())
     for amount in re.findall(r"(?:rs\.?|rupees?|pkr)\s*([\d][\d,]*)", reply, flags=re.I):
@@ -224,20 +229,16 @@ def check_faq_answer(data: dict, shop_info: str) -> tuple[str, list[str]]:
     for pct in re.findall(r"(\d+)\s*(?:%|percent|fisad)", reply, flags=re.I):
         if not re.search(rf"\b{pct}\s*%", shop_info):
             problems.append(f"{pct}% is not an offer in the shop info")
-    if not reply:
-        problems.append("empty reply")
     for word in RISKY_WORDS.findall(reply):  # a promise about something the shop never wrote down
         if word.lower()[:5] not in shop:
             problems.append(f"'{word}' is not mentioned in the shop info")
-    if kind == "answer":
-        evidence = [e for e in (data.get("evidence") or []) if isinstance(e, str)]
-        if not evidence:
-            problems.append("no evidence")
-        problems += [f"evidence not in shop info: {e[:60]}" for e in evidence if not _evidence_ok(e, shop)]
-        return ("unknown" if problems else "answer"), problems
-    if kind in ("clarify", "chat"):
-        return ("unknown" if problems else "small"), problems
-    return "unknown", problems or ["model said unknown"]
+    if not reply:
+        problems.append("empty reply")
+    if kind == "unknown":
+        return "unknown", problems or ["model said unknown"]
+    if problems:
+        return "unknown", problems
+    return ("small" if kind in ("clarify", "chat") else "answer"), []
 
 
 def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city: str,
@@ -257,16 +258,18 @@ def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city
     if history:
         system += "\n\nRECENT CHAT (oldest first, for context only):\n" + history
     safe = OWNER_WILL_CONFIRM.get(language, OWNER_WILL_CONFIRM["roman_urdu"]) + " [NEEDS_OWNER]"
-    for attempt in range(2):
-        extra = "" if attempt == 0 else "\nReturn ONLY the JSON object."
-        raw = chat(NANO, system + extra, message, temperature=0.2, max_tokens=450, timeout=15)
-        try:
-            data = extract_json(raw)
-        except (ValueError, json.JSONDecodeError):
-            continue
-        kind, _problems = check_faq_answer(data, shop_info)
-        return data["reply"].strip() if kind in ("answer", "small") else safe
-    return safe
+    raw = chat(NANO, system, message, temperature=0.2, max_tokens=450, timeout=15)
+    try:
+        data = extract_json(raw)
+        if not isinstance(data, dict) or not data.get("reply"):
+            raise ValueError("no reply field")
+    except (ValueError, json.JSONDecodeError):
+        # Nano answered in plain text instead of JSON: still run the same hard checks on that text
+        text = strip_thinking(raw).replace(NEEDS_OWNER_TAG, "").strip()
+        data = {"type": "unknown" if NEEDS_OWNER_TAG in raw else "answer", "reply": text}
+    kind, problems = check_faq_answer(data, shop_info)
+    print(f"FAQ check: type={data.get('type')} -> {kind} {problems}")  # shows in Vercel logs
+    return str(data["reply"]).strip() if kind in ("answer", "small") else safe
 
 
 # ---------------------------------------------------------------- owner setup (F5)

@@ -8,9 +8,9 @@ Return ONLY a JSON object, no other text:
  "evidence": ["words copied EXACTLY from SHOP INFO that prove each fact in reply"]}}
 
 How to choose "type":
-- "answer": SHOP INFO answers the question. Every fact in "reply" (price, area, timing, payment, policy,
-  product detail) must be backed by "evidence": short lines copied character for character from SHOP INFO.
-  The system checks every evidence line against SHOP INFO; a reply without real evidence is not sent.
+- "answer": SHOP INFO answers the question (menu, prices, timings, delivery areas and fee, payment,
+  written policies, FAQs). This is the normal case: answer it. Put the SHOP INFO lines you used in "evidence".
+  The system checks every price, percentage and promise in "reply" against SHOP INFO.
 - "unknown": SHOP INFO does not say (for example eggless, sugar-free, refunds when no policy is written,
   custom designs, pickup). Never guess yes or no. "reply" = a short line that the owner will confirm. The
   owner is alerted automatically.
