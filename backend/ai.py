@@ -179,10 +179,73 @@ LANG_INSTRUCTIONS = {
 }
 
 
+OWNER_WILL_CONFIRM = {
+    "roman_urdu": "Ji, ye main owner se confirm kar ke aap ko batati hoon. Shukriya!",
+    "mixed": "Ji, ye main owner se confirm kar ke aap ko batati hoon. Shukriya!",
+    "urdu": "جی، یہ میں مالک سے پوچھ کر آپ کو بتاتی ہوں۔ شکریہ!",
+    "english": "Let me check this with the owner and get back to you shortly. Thank you!",
+}
+
+
+# Topics a customer may rely on (diet, money back, offers). Nano may only mention them if SHOP INFO does.
+RISKY_WORDS = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|refund|exchange|return|pickup|pick up|"
+                         r"discount|offer|free|custom|warranty|guarantee)\b", re.I)
+
+
+def _norm(text: str) -> str:
+    """Lowercase, numbers without commas, punctuation removed, single spaces (works for Urdu script too)."""
+    text = re.sub(r"(?<=\d),(?=\d)", "", (text or "").lower())
+    return " ".join(re.findall(r"\w+", text))
+
+
+def _evidence_ok(line: str, shop: str) -> bool:
+    """True when this evidence line really is in SHOP INFO (exactly, or nearly all its words)."""
+    words = _norm(line).split()
+    if len(words) < 2:
+        return False
+    if " ".join(words) in shop:
+        return True
+    shop_words = set(shop.split())
+    return sum(w in shop_words for w in words) / len(words) >= 0.85
+
+
+def check_faq_answer(data: dict, shop_info: str) -> tuple[str, list[str]]:
+    """Decide in code whether Nano's FAQ answer may be sent. Returns (kind, problems).
+
+    kind: "answer" (send it), "small" (greeting / clarifying question, send it) or "unknown" (ask the owner)."""
+    shop = _norm(shop_info)
+    reply = str(data.get("reply") or "").strip()
+    kind = str(data.get("type") or "").lower()
+    problems = []
+    numbers = set(shop.split())
+    for amount in re.findall(r"(?:rs\.?|rupees?|pkr)\s*([\d][\d,]*)", reply, flags=re.I):
+        if amount.replace(",", "") not in numbers:
+            problems.append(f"Rs {amount} is not in the shop info")
+    for pct in re.findall(r"(\d+)\s*(?:%|percent|fisad)", reply, flags=re.I):
+        if not re.search(rf"\b{pct}\s*%", shop_info):
+            problems.append(f"{pct}% is not an offer in the shop info")
+    if not reply:
+        problems.append("empty reply")
+    for word in RISKY_WORDS.findall(reply):  # a promise about something the shop never wrote down
+        if word.lower()[:5] not in shop:
+            problems.append(f"'{word}' is not mentioned in the shop info")
+    if kind == "answer":
+        evidence = [e for e in (data.get("evidence") or []) if isinstance(e, str)]
+        if not evidence:
+            problems.append("no evidence")
+        problems += [f"evidence not in shop info: {e[:60]}" for e in evidence if not _evidence_ok(e, shop)]
+        return ("unknown" if problems else "answer"), problems
+    if kind in ("clarify", "chat"):
+        return ("unknown" if problems else "small"), problems
+    return "unknown", problems or ["model said unknown"]
+
+
 def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city: str,
                history: str = "") -> str:
-    """Nano: answer a question using only saved shop info (plus the last few chat lines, so follow-ups
-    like "maine bata diya hai" or "kya?" make sense)."""
+    """Nano answers a question from saved shop info only, and must quote the shop info it used.
+
+    Code then checks every quote, price and percentage. Anything it can't prove is not sent: the customer
+    gets "owner will confirm" and the reply ends with [NEEDS_OWNER] so main.py alerts the owner."""
     if MOCK:
         return "(mock) Ji, delivery Rs 200 hai. Owner jald confirm kar dein ge."
     system = load_prompt("faq.txt").format(
@@ -193,7 +256,17 @@ def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city
     )
     if history:
         system += "\n\nRECENT CHAT (oldest first, for context only):\n" + history
-    return chat(NANO, system, message, temperature=0.3, max_tokens=250, timeout=15)
+    safe = OWNER_WILL_CONFIRM.get(language, OWNER_WILL_CONFIRM["roman_urdu"]) + " [NEEDS_OWNER]"
+    for attempt in range(2):
+        extra = "" if attempt == 0 else "\nReturn ONLY the JSON object."
+        raw = chat(NANO, system + extra, message, temperature=0.2, max_tokens=450, timeout=15)
+        try:
+            data = extract_json(raw)
+        except (ValueError, json.JSONDecodeError):
+            continue
+        kind, _problems = check_faq_answer(data, shop_info)
+        return data["reply"].strip() if kind in ("answer", "small") else safe
+    return safe
 
 
 # ---------------------------------------------------------------- owner setup (F5)
