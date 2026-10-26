@@ -453,3 +453,93 @@ def test_agent_prompt_lists_dates_and_earliest_times():
     db.load_sample_shop(force=True)
     system = agent.build_messages("03009990004", "roman_urdu")[0]["content"]
     assert "parson (day after tomorrow)" in system and "Earliest possible delivery right now: cakes" in system
+
+
+# ------------------------------------------------------------------ reply guards, confirm routing, loyalty
+def test_made_up_price_is_never_sent(monkeypatch):
+    """The cupcake bug: Super offered Rs 1,000 (beyond the 10% limit) and said 'owner ne bola'."""
+    seen = []
+    bad = "Owner ne bola: Cupcakes Rs 1,000 + delivery Rs 200 = Rs 1,200. Final offer."
+
+    def fake(model, messages, tl):
+        seen.append(messages[-1]["content"])
+        if len(seen) == 1:
+            return NS(tool_calls=None, content=bad)
+        return NS(tool_calls=None, content="Maafi, Cupcakes ka best price Rs 1,080 hai (10% off).")
+
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", fake)
+    phone = "03009990010"
+    tools.check_discount(phone, "p8")
+    tools.check_discount(phone, "p8")  # 10% agreed -> Rs 1,080
+    out = agent.run_agent(phone, "roman_urdu")
+    assert out["reply"].endswith("(10% off).")
+    assert "Rs 1,000 is not a price" in seen[1] and "owner did not say" in seen[1]
+
+
+def test_still_wrong_price_sends_safe_reply_and_alerts_owner(monkeypatch):
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: NS(tool_calls=None, content="Chalo Rs 777 final!"))
+    out = agent.run_agent("03009990011", "roman_urdu")
+    assert out["reply"] == agent.SAFE_PRICE_REPLY and "flag_owner" in out["tools_used"] and db.list_flags()
+
+
+def test_owner_promise_without_flag_is_fixed(monkeypatch):
+    replies = [NS(tool_calls=None, content="Maafi chahti hoon. Owner ko batate hain."),
+               NS(tool_calls=[_call("flag_owner", {"reason": "wants lower price"}, 1)], content=""),
+               NS(tool_calls=None, content="Owner ko bata diya hai, wo jald rabta karein ge.")]
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: replies.pop(0))
+    out = agent.run_agent("03009990012", "roman_urdu")
+    assert "flag_owner" in out["tools_used"] and db.list_flags() and not replies
+
+
+def test_real_prices_budget_and_questions_pass_the_guard():
+    phone = "03009990013"
+    say(phone, "Mera budget 3000 hai")
+    ok = "Rs 3,000 ke budget mein Chocolate Fudge Cake 1kg Rs 2,200 + delivery Rs 200 = Rs 2,400. Owner se baat karwaun?"
+    assert agent.reply_problems(phone, ok, [], []) == []
+    assert agent.reply_problems(phone, "Is pe 40% off milega", [], [])  # no product allows 40%
+
+
+def test_confirm_messages_go_to_agent_not_faq():
+    import main
+    for text in ("Haan, confirm", "confirm kar dein", "ji", "G kar do"):
+        assert main.looks_like_confirm(text), text
+    assert not main.looks_like_confirm("Delivery charges kitne hain?")
+
+
+def _orders(phone, n):
+    db.upsert_customer(phone, {"name": "Ayesha", "addresses": [GOOD], "total_orders": n, "cancelled_orders": 0})
+
+
+def test_loyalty_every_5th_order_gets_10_percent_and_does_not_stack():
+    phone = "03009990014"
+    _orders(phone, 3)
+    assert tools.loyalty(phone)["orders_until_reward"] == 1 and not tools.loyalty(phone)["eligible"]
+    _orders(phone, 4)  # next one is the 5th order
+    r = tools.loyalty(phone)
+    assert r["eligible"] and r["percent"] == 10 and r["order_number"] == 5
+    tools.check_discount(phone, "p7")
+    tools.check_discount(phone, "p7")  # cookies allow 15% by bargaining: bigger than the 10% reward
+    s = tools.preview_order(phone, [{"product_id": "p7", "quantity": 1}, {"product_id": "p8", "quantity": 1}],
+                            "Ayesha", GOOD, future())["summary"]
+    cookies, cupcakes = s["items"]
+    assert cookies["discount_percent"] == 15 and cupcakes["discount_percent"] == 10  # never 15 + 10
+    assert s["loyalty_percent"] == 10 and s["total"] == 638 + 1080 + 200
+
+
+def test_loyalty_counts_cancelled_orders_out_and_owner_can_turn_it_off():
+    phone = "03009990015"
+    db.upsert_customer(phone, {"name": "Bilal", "total_orders": 5, "cancelled_orders": 1})
+    assert tools.loyalty(phone)["eligible"]  # 4 real orders -> next is the 5th
+    shop = db.get_shop()
+    db.save_catalog(dict(shop, loyalty_every=0), db.get_products(), db.get_faqs())
+    assert not tools.loyalty(phone)["active"]
+
+
+def test_returning_customer_info_has_saved_name_address_and_loyalty():
+    phone = "03009990016"
+    _orders(phone, 4)
+    info = agent.customer_info(phone)
+    assert "Saved name: Ayesha" in info and GOOD in info and "5th order" in info and "10% off" in info
