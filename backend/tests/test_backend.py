@@ -430,6 +430,7 @@ def test_bargain_without_check_discount_is_nudged(monkeypatch):
 
     monkeypatch.setattr(ai, "MOCK", False)
     monkeypatch.setattr(ai, "chat_with_tools", fake)
+    say("03009990003", "Thora kam kar dein")
     out = agent.run_agent("03009990003", "roman_urdu", "bargain")
     assert "check_discount" in out["tools_used"] and out["reply"].startswith("Aap ke liye")
     assert "check_discount now" in seen[1]
@@ -855,3 +856,38 @@ def test_offer_question_tells_the_loyalty_reward(monkeypatch):
     db.save_catalog(dict(shop, loyalty_every=0), db.get_products(), db.get_faqs())
     assert "koi offer nahi" in main.handle_message("03009990091", "Koi offer hai?").reply
     assert not main.OFFER_QUESTION.search("Thora kam kar dein")
+
+
+# ------------------------------------------------------------------ Oct 27 Noor test, section 7
+def test_order_limit_claim_is_never_sent():
+    assert agent.reply_problems("03009990100", "Too big - max limit Rs 8,000. Suggest fewer.", [], [])
+    assert agent.reply_problems("03009990100", "Ye maximum discount hai: Rs 1,080.", [], []) == []
+
+
+def test_changing_the_item_never_triggers_a_discount(monkeypatch):
+    """'Pineapple kar dein' was labelled bargain and the code forced a discount."""
+    seen = []
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: seen.append(1) or NS(tool_calls=None, content="Ji, pineapple cake Rs 1,800. Kitne chahiye?"))
+    say("03009990101", "Pineapple kar dein")
+    out = agent.run_agent("03009990101", "roman_urdu", "bargain")
+    assert "check_discount" not in out["tools_used"] and len(seen) == 1
+
+
+def test_ai_cannot_lock_the_price_with_its_own_percent():
+    phone = "03009990102"
+    say(phone, "kam karo")
+    tools.check_discount(phone, "p1")
+    say(phone, "aur kam")
+    second = tools.check_discount(phone, "p1", requested_percent=5)  # the AI passed 5, the customer never said 5%
+    assert second["discount_percent"] == 10
+    say(phone, "bas 2% kam kar do")
+    p = "03009990103"
+    say(p, "bas 2% kam kar do")
+    assert tools.check_discount(p, "p1", requested_percent=2)["discount_percent"] == 2
+
+
+def test_flagged_owner_sentence_removed_and_short_english_caught():
+    assert agent.clean_reply("Flagged owner. Owner aap se jald rabta karein ge.") == "Owner aap se jald rabta karein ge."
+    assert agent.sounds_english("We need quantities. How many of each? Shukriya!")
+    assert not agent.sounds_english("Ji, kitne chahiye? Shukriya!")

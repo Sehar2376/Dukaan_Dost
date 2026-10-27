@@ -103,8 +103,10 @@ def check_discount(phone: str, product_id: str, requested_percent: float = 0) ->
         offer, final = math.ceil(max_pct / 2), False
     else:
         offer, final = max_pct, True
-    if requested_percent and 0 < requested_percent < offer:
-        offer = requested_percent  # customer asked for less than we'd give
+    last = next((m["text"] for m in reversed(conv["messages"]) if m["role"] == "customer"), "")
+    said = requested_percent and re.search(rf"\b{int(requested_percent)}\s*(?:%|percent|fisad)", last, re.I)
+    if said and 0 < requested_percent < offer:
+        offer, final = requested_percent, False  # the customer asked for less than we'd give
     state["percent"] = offer
     conv["discounts"][product_id] = state
     db.save_conversation(phone, conv)

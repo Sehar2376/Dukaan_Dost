@@ -30,7 +30,7 @@ NUDGE = ("SYSTEM NOTE: do not tell the customer you will check something. Call t
 NARRATION = re.compile(
     r"\b(let me|let's (?:check|see|fetch|call)|i'?ll (?:get|call|fetch|search|check|look|use|run|confirm the order)|"
     r"i will (?:get|call|fetch|search|check|use|run)|fetch(?:ing)?|get products|get_products|get_customer|"
-    r"preview_order|preview order|confirm_order|check_discount|flag_owner|create_booking|flag owner|tool calls?|"
+    r"preview_order|preview order|confirm_order|check_discount|flag_owner|create_booking|flag(?:ged)? (?:the )?owner|tool calls?|"
     r"main unse poochta|main unse poochti|the customer (?:has|hasn't|wants|said)|customer abhi tak)\b",
     re.IGNORECASE)
 
@@ -165,8 +165,12 @@ def allowed_numbers(phone: str, tool_results: list) -> tuple[set, set]:
 FALSE_CANCEL = re.compile(r"\b(cancell?ed|cancel (?:ho gaya|ho gya|kar diya|kardiya|kar di|kardi|ho chuka))\b|"
                           r"order cancel ho", re.IGNORECASE)
 CANT_CANCEL = "you cannot cancel orders"
-ENGLISH_WORDS = {"the", "we", "you", "i'll", "i", "let", "have", "haven't", "what", "would", "like", "your", "and",
-                 "to", "is", "are", "will", "please", "can", "for", "it", "now", "just", "then", "before"}
+LIMIT_CLAIM = re.compile(r"\b(max(?:imum)?\s*limit|order limit|too big|bohat bara order|limit (?:hai|is|se zyada))\b",
+                         re.IGNORECASE)
+ENGLISH_WORDS = {"the", "we", "you", "i'll", "i", "let", "let's", "have", "haven't", "what", "would", "like", "your",
+                 "and", "to", "is", "are", "will", "please", "can", "for", "it", "now", "just", "then", "before",
+                 "need", "how", "many", "of", "each", "want", "all", "tell", "provide", "which", "do", "does",
+                 "too", "big", "suggest", "fewer", "contact", "soon", "they'll", "list", "got", "with"}
 ROMAN_WORDS = {"hai", "hain", "ji", "jee", "aap", "kar", "ka", "ki", "ke", "mein", "nahi", "hum", "ko", "se", "bhi",
                "kya", "dein", "chahiye", "theek", "shukriya", "batayein", "bata"}
 
@@ -175,7 +179,7 @@ def sounds_english(text: str) -> bool:
     words = re.findall(r"[a-z']+", (text or "").lower())
     en = sum(w in ENGLISH_WORDS for w in words)
     ur = sum(w in ROMAN_WORDS for w in words)
-    return en >= 4 and en > 2 * ur
+    return en >= 3 and en > 2 * ur
 
 
 def reply_problems(phone: str, reply: str, used: list, tool_results: list, language: str = "") -> list[str]:
@@ -196,6 +200,9 @@ def reply_problems(phone: str, reply: str, used: list, tool_results: list, langu
         if ai._norm(word)[:5] not in shop:
             problems.append(f"'{word}' {NOT_IN_SHOP} - never promise or describe it; say the owner will confirm "
                             "and call flag_owner")
+    if LIMIT_CLAIM.search(reply or ""):
+        problems.append("there is no order limit - accept any quantity; the owner is alerted about big orders "
+                        "automatically")
     if FALSE_CANCEL.search(reply or ""):
         problems.append(f"{CANT_CANCEL} - only the owner can; say the owner will handle it and call flag_owner")
     if language in ("roman_urdu", "urdu") and sounds_english(reply):
@@ -253,7 +260,7 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": NUDGE})
                 continue
-            if ((intent == "bargain" or asked_for_discount(phone)) and "check_discount" not in used
+            if (asked_for_discount(phone) and "check_discount" not in used
                     and not discount_nudged):
                 # bargaining must always go through the owner's limits in code, never the model's own answer
                 discount_nudged = True
