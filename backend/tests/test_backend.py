@@ -477,6 +477,7 @@ def test_made_up_price_is_never_sent(monkeypatch):
     tools.check_discount(phone, "p8")
     say(phone, "aur kam")
     tools.check_discount(phone, "p8")  # 10% agreed -> Rs 1,080
+    say(phone, "theek hai, total batao")
     out = agent.run_agent(phone, "roman_urdu")
     assert out["reply"].endswith("(10% off).")
     assert "Rs 1,000 is not a price" in seen[1] and "owner did not say" in seen[1]
