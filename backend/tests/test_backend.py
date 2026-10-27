@@ -727,3 +727,18 @@ def test_price_question_words():
         assert main.PRICE_QUESTION.search(t), t
     for t in ("Cake kitne din pehle order karna hoga?", "Eggless?", "Delivery kab hogi"):
         assert not main.PRICE_QUESTION.search(t), t
+
+
+def test_agent_never_invents_a_quantity_limit_or_custom_rule(monkeypatch):
+    """Oct 27 tests: '20 cakes' -> 'maximum limit 8000 rupees hai'; 'Happy Birthday likh dein' -> 'Custom text nahi'."""
+    phone = "03009990050"
+    assert "never invent a maximum or minimum" in ai.load_prompt("agent.txt")
+    assert agent.reply_problems(phone, "Ye maximum discount hai: Rs 1,080.", [], []) == []
+    shop = db.get_shop()
+    db.save_catalog(dict(shop, policies=""), db.get_products(), [])
+    assert agent.reply_problems(phone, "Custom text nahi kar sakte.", [], [])
+
+
+def test_agent_never_says_flag_to_the_customer():
+    assert agent.reply_problems("03009990051", "Ji, owner se poochte hain. Flag kar dete hain.", ["flag_owner"], [])
+    assert agent.reply_problems("03009990051", "Ji, owner ko bata diya hai, wo jald rabta karein ge.", ["flag_owner"], []) == []

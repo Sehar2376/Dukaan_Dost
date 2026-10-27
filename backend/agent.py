@@ -106,7 +106,8 @@ SAFE_PRICE_REPLY = "Ji, is price ke liye main owner se confirm kar ke aap ko bat
 # Promises about things the shop never wrote down (diet, money back, replacement, pickup...). Discounts are
 # left out here: bargaining talks about them all the time and the price guard above already checks the numbers.
 AGENT_RISKY = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|refunds?|exchange|replace\w*|"
-                         r"pickup|pick up|warranty|guarantee|free)\b", re.IGNORECASE)
+                         r"pickup|pick up|warranty|guarantee|free|custom)\b", re.IGNORECASE)
+INTERNAL_WORDS = re.compile(r"\b(flag(?:ged|ging)?|flag_owner|tool|tools|system|shop info|product[_ ]id)\b", re.IGNORECASE)
 NOT_IN_SHOP = "is not in the shop's info"
 
 
@@ -162,6 +163,8 @@ def reply_problems(phone: str, reply: str, used: list, tool_results: list) -> li
         if ai._norm(word)[:5] not in shop:
             problems.append(f"'{word}' {NOT_IN_SHOP} - never promise or describe it; say the owner will confirm "
                             "and call flag_owner")
+    if INTERNAL_WORDS.search(reply or ""):
+        problems.append("you used an internal word (flag, tool, system) with the customer - say it in normal words")
     statements = [x for x in re.split(r"(?<=[.!?\n])", reply or "") if not x.strip().endswith("?")]
     if any(OWNER_PROMISE.search(x) for x in statements) and "flag_owner" not in used:
         problems.append("you told the customer about the owner but did not call flag_owner")

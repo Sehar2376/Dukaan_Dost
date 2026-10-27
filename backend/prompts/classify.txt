@@ -42,7 +42,7 @@ Examples:
 "Tum log bakwas ho, ullu ke patthay" -> {"language":"roman_urdu","intent":"abuse","urgent":false}
 "Chor de" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "Mein bad review dal dunga" -> {"language":"roman_urdu","intent":"complaint","urgent":true}
-"Mera budget 3000 hai" -> {"language":"roman_urdu","intent":"bargain","urgent":false}
+"Mera budget 3000 hai" -> {"language":"roman_urdu","intent":"order","urgent":false}
 "Rehne do, baad mein bataungi" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "Sham 7 baje" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "G" -> {"language":"roman_urdu","intent":"other","urgent":false}
