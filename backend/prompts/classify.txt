@@ -48,6 +48,7 @@ Examples:
 "G" -> {"language":"roman_urdu","intent":"other","urgent":false}
 "Kuch discount mil jayega?" -> {"language":"roman_urdu","intent":"bargain","urgent":false}
 "Refund milta hai?" -> {"language":"roman_urdu","intent":"faq","urgent":false}
+"Koi offer hai?" -> {"language":"roman_urdu","intent":"faq","urgent":false}
 "Cake kharab tha, paise wapas karo" -> {"language":"roman_urdu","intent":"complaint","urgent":true}
 "ptice kam?" -> {"language":"roman_urdu","intent":"bargain","urgent":false}
 "Price thori kam karo" -> {"language":"roman_urdu","intent":"bargain","urgent":false}

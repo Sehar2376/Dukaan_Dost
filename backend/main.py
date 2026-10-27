@@ -129,6 +129,28 @@ ORDER_DETAIL = re.compile(r"\b(\d{1,2}\s*(?:baje|bjay|bje|am|pm)|kal|parson|aaj|
                           r"cancel)\b", re.IGNORECASE)
 
 
+# "Easypaisa chalega?", "Bank transfer lete hain?", "Card accept karte ho?": answered by code from the saved
+# payment methods (the AI once said yes to methods the shop doesn't take).
+PAYMENT_NAMES = {"easypaisa": "Easypaisa", "jazzcash": "JazzCash", "jazz cash": "JazzCash", "bank": "bank transfer",
+                 "card": "card", "cash": "cash on delivery", "cod": "cash on delivery"}
+PAYMENT_QUESTION = re.compile(r"\b(easypaisa|jazz ?cash|bank|card|cash|cod|payment)\b.*(\?|chale|chalta|chalti|"
+                              r"lete|leti|accept|hota|hoti|ho ga|hoga)|\b(payment|pay)\b.*\b(kaise|kis|kya)\b",
+                              re.IGNORECASE)
+
+
+def payment_reply(message: str, language: str) -> str:
+    methods = db.get_shop().get("payment_methods", [])
+    listed = ", ".join(methods) or "cash on delivery"
+    have = " ".join(methods).lower().replace(" ", "")
+    asked = [name for key, name in PAYMENT_NAMES.items() if key in message.lower()]
+    missing = [a for a in dict.fromkeys(asked) if a.lower().replace(" ", "").split("on")[0][:4] not in have]
+    if language == "english":
+        head = f"Sorry, we don't take {missing[0]} yet. " if missing else ""
+        return f"{head}You can pay by: {listed}."
+    head = f"Maaf kijiye, {missing[0]} abhi nahi lete. " if missing else "Ji, "
+    return f"{head}Payment ke liye: {listed}."
+
+
 def names_a_product(message: str) -> bool:
     """A short message that is just a product ("Chocolate", "nan khatai") continues an order: the agent handles it."""
     words = [w for w in re.findall(r"\w+", message.lower()) if len(w) > 2]
@@ -179,6 +201,11 @@ def _handle(phone: str, message: str) -> ChatOut:
         db.add_message(phone, "assistant", ABUSE_REPLY, info)
         return ChatOut(reply=ABUSE_REPLY, needs_owner=True, route=["nano"],
                        **{k: info[k] for k in ("language", "intent", "urgent")})
+
+    if PAYMENT_QUESTION.search(message) and not conv.get("draft_order"):
+        reply = payment_reply(message, info["language"])
+        db.add_message(phone, "assistant", reply, {**info, "route": route})
+        return ChatOut(reply=reply, language=info["language"], intent=info["intent"], urgent=info["urgent"], route=route)
 
     try:
         if (info["intent"] in AGENT_INTENTS or conv.get("draft_order") or _mid_order(conv, info["intent"])

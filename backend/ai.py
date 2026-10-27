@@ -189,8 +189,12 @@ OWNER_WILL_CONFIRM = {
 
 
 # Topics a customer may rely on (diet, money back, offers). Nano may only mention them if SHOP INFO does.
-RISKY_WORDS = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|refund|exchange|return|pickup|pick up|"
-                         r"discount|offer|free|custom|warranty|guarantee)\b", re.I)
+RISKY_WORDS = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|halal|organic|preservatives?|refund|"
+                         r"exchange|return|pickup|pick up|discount|offer|free|custom|warranty|guarantee)\b", re.I)
+UNIT_SAME = {"din": "day", "day": "din", "gha": "hou", "hou": "gha", "haf": "wee", "wee": "haf"}  # Urdu = English
+# "2 se 3 din", "24 ghante", "30 minutes": a promise about how long something takes
+DURATION = re.compile(r"\b(\d+)\s*(?:(?:se|to|-)\s*(\d+)\s*)?(din|days?|ghant\w*|hours?|hafte|weeks?|minutes?|mins?)\b",
+                      re.I)
 
 
 def _norm(text: str) -> str:
@@ -232,6 +236,10 @@ def check_faq_answer(data: dict, shop_info: str) -> tuple[str, list[str]]:
     for word in RISKY_WORDS.findall(reply):  # a promise about something the shop never wrote down
         if word.lower()[:5] not in shop:
             problems.append(f"'{word}' is not mentioned in the shop info")
+    for a, b, unit in DURATION.findall(reply):  # "Delivery 2 se 3 din mein" when the shop never said so
+        stems = {unit.lower()[:3], UNIT_SAME.get(unit.lower()[:3], "")} - {""}
+        if a not in numbers or (b and b not in numbers) or not any(st in shop for st in stems):
+            problems.append(f"'{a} {unit}' is not in the shop info")
     if not reply:
         problems.append("empty reply")
     if kind == "unknown":

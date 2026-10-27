@@ -819,3 +819,28 @@ def test_short_product_name_goes_to_the_agent():
 
 def test_preview_order_phrase_is_removed():
     assert agent.clean_reply("Preview order? Aap ka naam aur address bata dein.") == "Aap ka naam aur address bata dein."
+
+
+# ------------------------------------------------------------------ Oct 27 Noor test, section 6
+def test_payment_questions_answered_from_saved_methods(monkeypatch):
+    import main
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})
+    shop = db.get_shop()
+    db.save_catalog(dict(shop, payment_methods=["Cash on delivery", "JazzCash"]), db.get_products(), db.get_faqs())
+    r = main.handle_message("03009990080", "Easypaisa chalega?").reply
+    assert r.startswith("Maaf kijiye, Easypaisa abhi nahi lete") and "JazzCash" in r
+    assert main.handle_message("03009990081", "Bank transfer?").reply.startswith("Maaf kijiye, bank transfer")
+    assert main.handle_message("03009990082", "JazzCash chalega?").reply.startswith("Ji, Payment")
+    assert not main.PAYMENT_QUESTION.search("JazzCash se dunga")  # an order detail, not a question
+
+
+def test_faq_invented_delivery_time_and_halal_go_to_owner(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Delivery ke liye 2 se 3 din ka intezaar karna padega."}))
+    assert r.endswith("[NEEDS_OWNER]")
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Ji, sab cheez halal hai."}))
+    assert r.endswith("[NEEDS_OWNER]")
+
+
+def test_faq_real_notice_time_is_allowed(monkeypatch):
+    r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Cakes ke liye 1 day pehle order karein."}))
+    assert r.startswith("Cakes")  # the bakery's info says "Cakes need 1 day advance notice"

@@ -123,7 +123,7 @@ SAFE_PRICE_REPLY = "Ji, is price ke liye main owner se confirm kar ke aap ko bat
 # Promises about things the shop never wrote down (diet, money back, replacement, pickup...). Discounts are
 # left out here: bargaining talks about them all the time and the price guard above already checks the numbers.
 AGENT_RISKY = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|refunds?|exchange|replace\w*|"
-                         r"pickup|pick up|warranty|guarantee|free|custom)\b", re.IGNORECASE)
+                         r"pickup|pick up|warranty|guarantee|free|custom|halal|organic|preservatives?)\b", re.IGNORECASE)
 INTERNAL_WORDS = re.compile(r"\b(flag(?:ged|ging)?|flag_owner|tool|tools|system|shop info|product[_ ]id)\b", re.IGNORECASE)
 NOT_IN_SHOP = "is not in the shop's info"
 
