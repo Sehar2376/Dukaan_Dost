@@ -891,3 +891,7 @@ def test_flagged_owner_sentence_removed_and_short_english_caught():
     assert agent.clean_reply("Flagged owner. Owner aap se jald rabta karein ge.") == "Owner aap se jald rabta karein ge."
     assert agent.sounds_english("We need quantities. How many of each? Shukriya!")
     assert not agent.sounds_english("Ji, kitne chahiye? Shukriya!")
+
+
+def test_agent_prompt_says_everything_means_one_of_each():
+    assert "1 of each in-stock item" in ai.load_prompt("agent.txt")

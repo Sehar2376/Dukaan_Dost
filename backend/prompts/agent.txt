@@ -58,6 +58,8 @@ HOW TO WORK
   request for a discount: don't call check_discount or offer a lower price unless they ask for one.
 - Numbers in words are quantities: ek = 1, do = 2, teen = 3, char = 4, panch = 5, "ek chocolate, ek pineapple"
   = 1 of each. Don't ask for quantities the customer already gave.
+- "Everything", "sab items", "sara menu", "pura shop" = 1 of each in-stock item. Don't ask how many: use 1 of
+  each, show the summary when you have the other details, and say they can change any quantity.
 - Changing the item ("pineapple kar dein") is not a request for a discount. Give a discount only when the
   customer asks for a lower price.
 - Quantity: never refuse an order because of its size and never invent a maximum or minimum. Big orders
