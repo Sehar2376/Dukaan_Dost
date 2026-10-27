@@ -704,3 +704,26 @@ def test_faq_history_leaves_out_owner_will_confirm_lines(monkeypatch):
     db.add_message(phone, "assistant", ai.OWNER_WILL_CONFIRM["roman_urdu"])
     main.handle_message(phone, "Timing?")
     assert "Eggless?" in seen["h"] and "owner se confirm" not in seen["h"]
+
+
+def test_price_and_menu_questions_never_end_in_owner_confirm(monkeypatch):
+    """Oct 27 Noor test: 'Menu bhej dein' and 'Chocolate cake kitne ka hai?' got 'owner se confirm karti hoon'."""
+    import main
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "over_budget", lambda: False)
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})
+    monkeypatch.setattr(ai, "answer_faq", lambda *a, **k: ai.OWNER_WILL_CONFIRM["roman_urdu"] + " [NEEDS_OWNER]")
+    for i, text in enumerate(("Menu bhej dein", "Chocolate cake 1kg kitne ka hai?", "rate list?")):
+        out = main.handle_message(f"0300999004{i}", text)
+        assert "Rs 2,200" in out.reply and "Delivery: Rs 200" in out.reply and not out.needs_owner, text
+        assert "Lotus" not in out.reply  # out of stock items are left out
+    out = main.handle_message("03009990049", "Eggless cake banate hain?")
+    assert out.needs_owner  # not a price question: still goes to the owner
+
+
+def test_price_question_words():
+    import main
+    for t in ("Menu bhej dein", "kitne ka hai", "price?", "Cake ki qeemat", "کیک کی قیمت"):
+        assert main.PRICE_QUESTION.search(t), t
+    for t in ("Cake kitne din pehle order karna hoga?", "Eggless?", "Delivery kab hogi"):
+        assert not main.PRICE_QUESTION.search(t), t

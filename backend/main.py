@@ -102,6 +102,22 @@ def _mid_order(conv: dict, intent: str) -> bool:
 
 
 PRODUCT_ID = re.compile(r"[ \t]*\[p\d+\]")
+# "Menu bhej dein", "Chocolate cake kitne ka hai?", "rate list", "قیمت" (not "kitne din pehle")
+PRICE_QUESTION = re.compile(r"\b(menu|price|prices|rate|rates|qeemat|keemat|kimat|cost)\b|\bkitne? k[ai]\b|"
+                            r"\bkitnay k[ai]\b|\bkitna\s+(?:hai|hy|he)\b|قیمت|مینو|ریٹ", re.IGNORECASE)
+MENU_HEADER = {"urdu": "جی، ہمارا مینو یہ ہے:", "english": "Here is our menu:"}
+MENU_FOOTER = {"urdu": "ڈیلیوری: Rs {fee:,}", "english": "Delivery: Rs {fee:,}"}
+
+
+def menu_reply(language: str) -> str:
+    """The menu with prices, written by code straight from the saved products (always correct)."""
+    shop = db.get_shop()
+    lines = [f"- {p['name']}: Rs {p['price']:,}" for p in db.get_products() if p.get("in_stock", True)]
+    head = MENU_HEADER.get(language, "Ji, hamara menu yeh hai:")
+    foot = MENU_FOOTER.get(language, "Delivery: Rs {fee:,}").format(fee=int(shop.get("delivery_fee", 0) or 0))
+    return "\n".join([head, *lines, foot])
+
+
 CONFIRM_WORDS = re.compile(r"\b(confirm|confirmed|order kar|order kardo|order kar do|book kar|place kar)\b|کنفرم",
                            re.IGNORECASE)
 
@@ -164,6 +180,8 @@ def _handle(phone: str, message: str) -> ChatOut:
             history = "\n".join(f"{'Customer' if m['role'] == 'customer' else 'Shop'}: {m['text'][:300]}" for m in recent)
             reply = ai.answer_faq(message, info["language"], db.shop_info_text(), shop["name"],
                                   shop.get("city", ""), history=history)
+            if NEEDS_OWNER in reply and PRICE_QUESTION.search(message):
+                reply = menu_reply(info["language"])  # a price/menu question is answered from the database, never guessed
     except RuntimeError:
         reply, needs_owner = FALLBACK_REPLY, True
         db.add_flag("urgent", phone, "AI service error - please reply manually")
