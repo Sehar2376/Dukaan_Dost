@@ -475,6 +475,20 @@ class SetupSave(BaseModel):
     faqs: list[dict] = []
 
 
+class StockIn(BaseModel):
+    in_stock: bool
+
+
+@app.patch("/products/{product_id}")
+def set_stock(product_id: str, body: StockIn):
+    """One tap in Settings: mark an item sold out (or available again) without pasting the whole menu.
+    The assistant reads in_stock on every message, so customers are told right away."""
+    if not db.get_product(product_id):
+        raise HTTPException(404, "Product not found")
+    db.store.update("products", product_id, {"in_stock": body.in_stock})
+    return db.get_product(product_id)
+
+
 @app.post("/setup/save")
 def setup_save(body: SetupSave):
     for p in body.products:

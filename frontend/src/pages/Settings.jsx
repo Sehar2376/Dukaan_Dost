@@ -64,6 +64,20 @@ function ShopSetup() {
     }
   }
 
+  async function toggleStock(p) {
+    setBusy(true);
+    try {
+      await api(`/products/${encodeURIComponent(p.id)}`, { method: "PATCH", body: { in_stock: !p.in_stock } });
+      toast(p.in_stock ? `${p.name} marked sold out. The assistant will tell customers it's not available.`
+        : `${p.name} is available again.`);
+      current.reload();
+    } catch (e) {
+      toast(e.message, "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function restore() {
     if (!window.confirm("Replace your menu with the sample bakery menu?")) return;
     setBusy(true);
@@ -134,7 +148,15 @@ function ShopSetup() {
                 <td className={cx(td, "tabular-nums")}>{rs(p.price)}</td>
                 <td className={cx(td, "tabular-nums text-slate-500")}>{rs(p.cost_price)}</td>
                 <td className={cx(td, "tabular-nums")}>{p.max_discount_percent}%</td>
-                <td className={td}>{p.in_stock ? <Badge tone="success" dot>In stock</Badge> : <Badge tone="danger" dot>Out of stock</Badge>}</td>
+                <td className={td}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {p.in_stock ? <Badge tone="success" dot>In stock</Badge> : <Badge tone="danger" dot>Out of stock</Badge>}
+                    <Button size="sm" variant="ghost" onClick={() => toggleStock(p)} disabled={busy}
+                      aria-label={p.in_stock ? `Mark ${p.name} sold out` : `Mark ${p.name} available`}>
+                      {p.in_stock ? "Mark sold out" : "Mark available"}
+                    </Button>
+                  </div>
+                </td>
               </tr>
             ))}
           </Table>

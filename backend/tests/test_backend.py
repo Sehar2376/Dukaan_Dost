@@ -895,3 +895,14 @@ def test_flagged_owner_sentence_removed_and_short_english_caught():
 
 def test_agent_prompt_says_everything_means_one_of_each():
     assert "1 of each in-stock item" in ai.load_prompt("agent.txt")
+
+
+# ------------------------------------------------------------------ one-tap stock toggle (Settings)
+def test_owner_marks_item_sold_out_and_available_again():
+    r = client.patch("/products/p1", json={"in_stock": False})
+    assert r.status_code == 200 and r.json()["in_stock"] is False
+    assert "OUT OF STOCK" in db.shop_info_text().split("[p1]")[1].split("\n")[0]
+    res = tools.preview_order("03009990110", [{"product_id": "p1", "quantity": 1}], "Ali", GOOD, future())
+    assert not res["ok"] and "out of stock" in res["problems"][0]
+    assert client.patch("/products/p1", json={"in_stock": True}).json()["in_stock"] is True
+    assert client.patch("/products/nope", json={"in_stock": True}).status_code == 404
