@@ -16,7 +16,7 @@ import summary
 app = FastAPI(title="Dukaan Dost API", version="0.6.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-FALLBACK_REPLY = "Thori der mein reply karte hain, shukriya!"
+FALLBACK_REPLY = "Thori der mein reply karte hain."
 LIMIT_REPLY = "Aaj ke messages ki limit poori ho gayi. Owner jald aap se rabta karein ge."
 BUSY_REPLY = "Abhi bohat zyada messages aa rahe hain. Owner jald aap se rabta karein ge."
 ABUSE_REPLY = "Hum aap ki madad ke liye hazir hain. Meharbani kar ke ehtiram se baat karein."
@@ -260,6 +260,7 @@ def _handle(phone: str, message: str) -> ChatOut:
     if not reply:
         reply = FALLBACK_REPLY
 
+    reply = agent.limit_thanks(reply, order_saved="confirm_order" in used)  # thank once, only after an order
     if ai.MOCK:
         route = ["practice"]  # no API key: rules in practice.py answered, not Nemotron
     db.add_message(phone, "assistant", reply, {**info, "tools_used": used, "route": route})

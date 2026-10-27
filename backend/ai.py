@@ -181,10 +181,10 @@ LANG_INSTRUCTIONS = {
 
 NEEDS_OWNER_TAG = "[NEEDS_OWNER]"
 OWNER_WILL_CONFIRM = {
-    "roman_urdu": "Ji, ye main owner se confirm kar ke aap ko batati hoon. Shukriya!",
-    "mixed": "Ji, ye main owner se confirm kar ke aap ko batati hoon. Shukriya!",
-    "urdu": "جی، یہ میں مالک سے پوچھ کر آپ کو بتاتی ہوں۔ شکریہ!",
-    "english": "Let me check this with the owner and get back to you shortly. Thank you!",
+    "roman_urdu": "Ji, ye main owner se confirm kar ke aap ko batati hoon.",
+    "mixed": "Ji, ye main owner se confirm kar ke aap ko batati hoon.",
+    "urdu": "جی، یہ میں مالک سے پوچھ کر آپ کو بتاتی ہوں۔",
+    "english": "Let me check this with the owner and get back to you shortly.",
 }
 
 

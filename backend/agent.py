@@ -42,6 +42,23 @@ def clean_reply(text: str) -> str:
     return " ".join(kept).strip()
 
 
+THANKS = re.compile(r"[ ,.!-]*(\b(?:shukriya|shukria|thank you|thanks|jazak\s?allah(?: khair)?)\b|شکریہ)[ .!۔]*",
+                    re.IGNORECASE)
+
+
+def limit_thanks(reply: str, order_saved: bool) -> str:
+    """Thank the customer once, and only when an order was saved this turn."""
+    matches = list(THANKS.finditer(reply or ""))
+    if not matches:
+        return reply
+    if order_saved:  # keep the first thank-you, drop repeats
+        head = reply[:matches[0].end()]
+        tail = THANKS.sub(" ", reply[matches[0].end():])
+        return re.sub(r" {2,}", " ", head + tail).strip()
+    text = re.sub(r" {2,}", " ", THANKS.sub(" ", reply)).strip(" ,-")
+    return text or reply
+
+
 def is_stall(text: str) -> bool:
     t = (text or "").lower()
     return any(w in t for w in STALL_WORDS)
@@ -119,7 +136,7 @@ AMOUNT = re.compile(r"(?:\brs\.?|\brupees?|rupay|rupaye|pkr|₨)\s*([\d][\d,]*)|
 PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*(?:%|percent|fisad)", re.IGNORECASE)
 OWNER_SAID = re.compile(r"\b(owner|malik|maalik)\s*(sahab|sahib|saheb)?\s*ne\b", re.IGNORECASE)
 OWNER_PROMISE = re.compile(r"\b(owner|malik|maalik)\s*(sahab|sahib|saheb)?\s*(ko|se|aap se|jald|contact|rabta)", re.IGNORECASE)
-SAFE_PRICE_REPLY = "Ji, is price ke liye main owner se confirm kar ke aap ko batati hoon. Shukriya!"
+SAFE_PRICE_REPLY = "Ji, is price ke liye main owner se confirm kar ke aap ko batati hoon."
 # Promises about things the shop never wrote down (diet, money back, replacement, pickup...). Discounts are
 # left out here: bargaining talks about them all the time and the price guard above already checks the numbers.
 AGENT_RISKY = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|refunds?|exchange|replace\w*|"
