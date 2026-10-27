@@ -91,7 +91,10 @@ def check_discount(phone: str, product_id: str, requested_percent: float = 0) ->
         return {"error": f"Unknown product_id {product_id}. Call get_products first."}
     conv = db.get_conversation(phone)
     state = conv["discounts"].get(product_id, {"attempts": 0, "percent": 0})
-    state["attempts"] += 1
+    turn = sum(1 for m in conv["messages"] if m["role"] == "customer")
+    if state.get("turn") != turn:  # one step per customer message, however many times the AI calls this
+        state["attempts"] += 1
+        state["turn"] = turn
     max_pct = float(p.get("max_discount_percent", 0))
 
     if max_pct <= 0:

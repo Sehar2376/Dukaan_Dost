@@ -30,7 +30,7 @@ NUDGE = ("SYSTEM NOTE: do not tell the customer you will check something. Call t
 NARRATION = re.compile(
     r"\b(let me|let's (?:check|see|fetch|call)|i'?ll (?:get|call|fetch|search|check|look|use|run|confirm the order)|"
     r"i will (?:get|call|fetch|search|check|use|run)|fetch(?:ing)?|get products|get_products|get_customer|"
-    r"preview_order|confirm_order|check_discount|flag_owner|create_booking|flag owner|tool calls?|"
+    r"preview_order|preview order|confirm_order|check_discount|flag_owner|create_booking|flag owner|tool calls?|"
     r"main unse poochta|main unse poochti|the customer (?:has|hasn't|wants|said)|customer abhi tak)\b",
     re.IGNORECASE)
 

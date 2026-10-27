@@ -41,8 +41,11 @@ def fresh_db():
 # ------------------------------------------------------------------ bargaining (F4)
 def test_discount_steps_and_never_exceeds_max():
     phone = "03000000001"
+    say(phone, "kam karo")
     first = tools.check_discount(phone, "p2", 50)        # max is 10%
+    say(phone, "aur kam")
     second = tools.check_discount(phone, "p2", 90)
+    say(phone, "plz aur kam")
     third = tools.check_discount(phone, "p2", 90)
     assert first["discount_percent"] == 5 and not first["is_final_offer"]
     assert second["discount_percent"] == 10 and second["is_final_offer"]
@@ -470,7 +473,9 @@ def test_made_up_price_is_never_sent(monkeypatch):
     monkeypatch.setattr(ai, "MOCK", False)
     monkeypatch.setattr(ai, "chat_with_tools", fake)
     phone = "03009990010"
+    say(phone, "kam karo")
     tools.check_discount(phone, "p8")
+    say(phone, "aur kam")
     tools.check_discount(phone, "p8")  # 10% agreed -> Rs 1,080
     out = agent.run_agent(phone, "roman_urdu")
     assert out["reply"].endswith("(10% off).")
@@ -520,7 +525,9 @@ def test_loyalty_every_5th_order_gets_10_percent_and_does_not_stack():
     _orders(phone, 4)  # next one is the 5th order
     r = tools.loyalty(phone)
     assert r["eligible"] and r["percent"] == 10 and r["order_number"] == 5
+    say(phone, "cookies kam karo")
     tools.check_discount(phone, "p7")
+    say(phone, "aur kam")
     tools.check_discount(phone, "p7")  # cookies allow 15% by bargaining: bigger than the 10% reward
     s = tools.preview_order(phone, [{"product_id": "p7", "quantity": 1}, {"product_id": "p8", "quantity": 1}],
                             "Ayesha", GOOD, future())["summary"]
@@ -790,3 +797,24 @@ def test_order_details_always_go_to_the_agent():
         assert main.ORDER_DETAIL.search(t), t
     for t in ("Delivery charges kitne hain?", "Menu bhej dein", "Eggless cake banate hain?"):
         assert not main.ORDER_DETAIL.search(t), t
+
+
+def test_discount_moves_one_step_per_customer_message():
+    """Oct 27: nan khatai's first ask jumped straight to 15% because the AI called check_discount twice."""
+    phone = "03009990070"
+    say(phone, "Cookies pe discount?")
+    first = tools.check_discount(phone, "p7")
+    again = tools.check_discount(phone, "p7")  # same customer message: no extra step
+    assert first["discount_percent"] == again["discount_percent"] == 8
+    say(phone, "Aur kam?")
+    assert tools.check_discount(phone, "p7")["discount_percent"] == 15
+
+
+def test_short_product_name_goes_to_the_agent():
+    import main
+    assert main.names_a_product("Chocolate") and main.names_a_product("cupcakes")
+    assert not main.names_a_product("Delivery charges kitne hain?") and not main.names_a_product("kya")
+
+
+def test_preview_order_phrase_is_removed():
+    assert agent.clean_reply("Preview order? Aap ka naam aur address bata dein.") == "Aap ka naam aur address bata dein."

@@ -129,6 +129,15 @@ ORDER_DETAIL = re.compile(r"\b(\d{1,2}\s*(?:baje|bjay|bje|am|pm)|kal|parson|aaj|
                           r"cancel)\b", re.IGNORECASE)
 
 
+def names_a_product(message: str) -> bool:
+    """A short message that is just a product ("Chocolate", "nan khatai") continues an order: the agent handles it."""
+    words = [w for w in re.findall(r"\w+", message.lower()) if len(w) > 2]
+    if not words or len(words) > 3:
+        return False
+    names = " ".join(p["name"].lower() for p in db.get_products())
+    return any(w in names for w in words)
+
+
 def looks_like_confirm(message: str) -> bool:
     """'Haan, confirm' or 'ji kar dein' must always reach the order agent, which checks for a saved order in
     code. The FAQ path can't see orders, so it must never be the one to answer (it could wrongly say
@@ -173,7 +182,7 @@ def _handle(phone: str, message: str) -> ChatOut:
 
     try:
         if (info["intent"] in AGENT_INTENTS or conv.get("draft_order") or _mid_order(conv, info["intent"])
-                or looks_like_confirm(message) or ORDER_DETAIL.search(message)):
+                or looks_like_confirm(message) or ORDER_DETAIL.search(message) or names_a_product(message)):
             route.append("super")
             result = agent.run_agent(phone, info["language"], info["intent"])  # Nemotron Super + tools
             c = db.get_conversation(phone)
