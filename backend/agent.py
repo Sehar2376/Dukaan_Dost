@@ -19,10 +19,27 @@ HISTORY = 12  # how many earlier messages the model sees
 # Replies that only promise to do something ("ek moment, products dhundhta hoon") instead of doing it.
 STALL_WORDS = ("ek moment", "ek sec", "ek minute", "abhi dekhta", "abhi dekhti", "check karta", "check karti",
                "check kar ke", "dhundhta", "dhundhti", "nikalta", "nikalti", "product id", "product_id",
-               "let me check", "one moment", "please wait", "check karte", "check krte", "check karke",
+               "let me", "one moment", "please wait", "check karte", "check krte", "check karke",
                "dekhte hain", "dekh ke batat", "pata karte", "pata kar ke")
 NUDGE = ("SYSTEM NOTE: do not tell the customer you will check something. Call the tool you need now "
          "(product ids are in SHOP INFO, e.g. [p1]) and then reply with the result. Never mention ids or tools.")
+
+
+# Sentences where the model narrates its own work ("Let me fetch prices.", "Flag owner.", "I'll call
+# confirm_order.", "Customer abhi tak ... Main unse poochta hoon"). They are removed before anything is sent.
+NARRATION = re.compile(
+    r"\b(let me|let's (?:check|see|fetch|call)|i'?ll (?:get|call|fetch|search|check|look|use|run|confirm the order)|"
+    r"i will (?:get|call|fetch|search|check|use|run)|fetch(?:ing)?|get products|get_products|get_customer|"
+    r"preview_order|confirm_order|check_discount|flag_owner|create_booking|flag owner|tool calls?|"
+    r"main unse poochta|main unse poochti|the customer (?:has|hasn't|wants|said)|customer abhi tak)\b",
+    re.IGNORECASE)
+
+
+def clean_reply(text: str) -> str:
+    """Drop the model's narration sentences; keep everything written for the customer."""
+    parts = re.split(r"(?<=[.!?\n])\s+", (text or "").strip())
+    kept = [p for p in parts if p.strip() and not NARRATION.search(p)]
+    return " ".join(kept).strip()
 
 
 def is_stall(text: str) -> bool:
@@ -145,7 +162,23 @@ def allowed_numbers(phone: str, tool_results: list) -> tuple[set, set]:
     return amounts, percents
 
 
-def reply_problems(phone: str, reply: str, used: list, tool_results: list) -> list[str]:
+FALSE_CANCEL = re.compile(r"\b(cancell?ed|cancel (?:ho gaya|ho gya|kar diya|kardiya|kar di|kardi|ho chuka))\b|"
+                          r"order cancel ho", re.IGNORECASE)
+CANT_CANCEL = "you cannot cancel orders"
+ENGLISH_WORDS = {"the", "we", "you", "i'll", "i", "let", "have", "haven't", "what", "would", "like", "your", "and",
+                 "to", "is", "are", "will", "please", "can", "for", "it", "now", "just", "then", "before"}
+ROMAN_WORDS = {"hai", "hain", "ji", "jee", "aap", "kar", "ka", "ki", "ke", "mein", "nahi", "hum", "ko", "se", "bhi",
+               "kya", "dein", "chahiye", "theek", "shukriya", "batayein", "bata"}
+
+
+def sounds_english(text: str) -> bool:
+    words = re.findall(r"[a-z']+", (text or "").lower())
+    en = sum(w in ENGLISH_WORDS for w in words)
+    ur = sum(w in ROMAN_WORDS for w in words)
+    return en >= 4 and en > 2 * ur
+
+
+def reply_problems(phone: str, reply: str, used: list, tool_results: list, language: str = "") -> list[str]:
     amounts, percents = allowed_numbers(phone, tool_results)
     problems = []
     for a, b in AMOUNT.findall(reply or ""):
@@ -163,6 +196,10 @@ def reply_problems(phone: str, reply: str, used: list, tool_results: list) -> li
         if ai._norm(word)[:5] not in shop:
             problems.append(f"'{word}' {NOT_IN_SHOP} - never promise or describe it; say the owner will confirm "
                             "and call flag_owner")
+    if FALSE_CANCEL.search(reply or ""):
+        problems.append(f"{CANT_CANCEL} - only the owner can; say the owner will handle it and call flag_owner")
+    if language in ("roman_urdu", "urdu") and sounds_english(reply):
+        problems.append("the customer writes Roman Urdu: reply in Roman Urdu, not English")
     if INTERNAL_WORDS.search(reply or ""):
         problems.append("you used an internal word (flag, tool, system) with the customer - say it in normal words")
     statements = [x for x in re.split(r"(?<=[.!?\n])", reply or "") if not x.strip().endswith("?")]
@@ -200,7 +237,7 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
         return practice.run(phone)
 
     messages = build_messages(phone, language)
-    used, summary, nudged, discount_nudged, guarded = [], None, False, False, False
+    used, summary, nudged, discount_nudged, guarded = [], None, 0, False, False
     results = []  # every tool result this turn: numbers in them are allowed in the reply
     start = time.monotonic()
     for _ in range(MAX_STEPS):
@@ -208,9 +245,11 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
             break  # too slow today: alert the owner below instead of letting the request time out
         msg = ai.chat_with_tools(ai.SUPER, messages, tools.TOOLS)
         if not msg.tool_calls:
-            reply = ai.strip_thinking(msg.content or "")
-            if is_stall(reply) and not nudged:  # it only promised to check: make it actually do it, once
-                nudged = True
+            raw = ai.strip_thinking(msg.content or "")
+            reply = clean_reply(raw)
+            if (not reply or is_stall(reply)) and nudged < 2:  # it only narrated or promised: make it act
+                nudged += 1
+                reply = raw
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": NUDGE})
                 continue
@@ -221,7 +260,9 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": DISCOUNT_NUDGE})
                 continue
-            problems = reply_problems(phone, reply, used, results)
+            if not reply:
+                break  # still only narration: alert the owner below instead of sending it
+            problems = reply_problems(phone, reply, used, results, language)
             if problems and not guarded:  # made-up price or a false "owner" line: ask it to fix the reply, once
                 guarded = True
                 messages.append({"role": "assistant", "content": reply})
@@ -230,7 +271,7 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
             if problems:  # still wrong: never send a made-up price; alert the owner so the promise is true
                 tools.flag_owner(phone, "Assistant could not give a valid reply: " + "; ".join(problems)[:200], "question")
                 used.append("flag_owner")
-                if any(NOT_IN_SHOP in p for p in problems):  # an invented policy is never sent
+                if any(NOT_IN_SHOP in p or CANT_CANCEL in p for p in problems):  # never sent
                     reply = ai.OWNER_WILL_CONFIRM.get(language, ai.OWNER_WILL_CONFIRM["roman_urdu"])
                 elif any("Rs " in p or "%" in p for p in problems):
                     reply = SAFE_PRICE_REPLY

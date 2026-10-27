@@ -122,6 +122,13 @@ CONFIRM_WORDS = re.compile(r"\b(confirm|confirmed|order kar|order kardo|order ka
                            re.IGNORECASE)
 
 
+# Times, addresses, names and payment in a message are order details: only the order agent checks them in
+# code (shop hours, notice, delivery area). The FAQ path must never answer "raat 11 baje deliver kar dein ge".
+ORDER_DETAIL = re.compile(r"\b(\d{1,2}\s*(?:baje|bjay|bje|am|pm)|kal|parson|aaj|subah|shaam|sham|raat|dopahar|"
+                          r"address|house|block|street|gali|flat|naam|name|cash|cod|jazzcash|easypaisa|"
+                          r"cancel)\b", re.IGNORECASE)
+
+
 def looks_like_confirm(message: str) -> bool:
     """'Haan, confirm' or 'ji kar dein' must always reach the order agent, which checks for a saved order in
     code. The FAQ path can't see orders, so it must never be the one to answer (it could wrongly say
@@ -166,7 +173,7 @@ def _handle(phone: str, message: str) -> ChatOut:
 
     try:
         if (info["intent"] in AGENT_INTENTS or conv.get("draft_order") or _mid_order(conv, info["intent"])
-                or looks_like_confirm(message)):
+                or looks_like_confirm(message) or ORDER_DETAIL.search(message)):
             route.append("super")
             result = agent.run_agent(phone, info["language"], info["intent"])  # Nemotron Super + tools
             c = db.get_conversation(phone)

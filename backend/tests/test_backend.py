@@ -742,3 +742,51 @@ def test_agent_never_invents_a_quantity_limit_or_custom_rule(monkeypatch):
 def test_agent_never_says_flag_to_the_customer():
     assert agent.reply_problems("03009990051", "Ji, owner se poochte hain. Flag kar dete hain.", ["flag_owner"], [])
     assert agent.reply_problems("03009990051", "Ji, owner ko bata diya hai, wo jald rabta karein ge.", ["flag_owner"], []) == []
+
+
+# ------------------------------------------------------------------ Oct 27 Noor test: narration, false cancel, English
+def test_narration_sentences_are_removed():
+    assert agent.clean_reply("Flag owner. Owner ko bata diya hai jee, wo aap se rabta karein ge.") == \
+        "Owner ko bata diya hai jee, wo aap se rabta karein ge."
+    assert agent.clean_reply("I'll confirm the order now. Let me call confirm_order.") == ""
+    assert agent.clean_reply("Customer abhi tak koi product select nahi kiya. Main unse poochta hoon. Jee?") == "Jee?"
+    assert agent.clean_reply("Chocolate cake Rs 2,200 hai. Order karna hai?") == "Chocolate cake Rs 2,200 hai. Order karna hai?"
+
+
+def test_narration_only_reply_is_never_sent(monkeypatch):
+    replies = [NS(tool_calls=None, content="Get products. Let me fetch prices."),
+               NS(tool_calls=None, content="I'll get products info."),
+               NS(tool_calls=None, content="Chocolate Fudge Cake 1kg Rs 2,200 hai ji.")]
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: replies.pop(0))
+    out = agent.run_agent("03009990060", "roman_urdu")
+    assert out["reply"] == "Chocolate Fudge Cake 1kg Rs 2,200 hai ji."
+
+
+def test_narration_forever_alerts_owner_instead(monkeypatch):
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: NS(tool_calls=None, content="Let me search for chocolate cake."))
+    out = agent.run_agent("03009990061", "roman_urdu")
+    assert "let me" not in out["reply"].lower() and db.list_flags()
+
+
+def test_ai_never_claims_it_cancelled_an_order(monkeypatch):
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: NS(tool_calls=None, content="Okay, order cancelled."))
+    out = agent.run_agent("03009990062", "roman_urdu")
+    assert out["reply"] == ai.OWNER_WILL_CONFIRM["roman_urdu"] and "flag_owner" in out["tools_used"]
+
+
+def test_english_reply_to_roman_urdu_customer_is_flagged():
+    long_en = "We haven't set up any items yet, let's build the order together. What would you like to order today?"
+    assert agent.reply_problems("03009990063", long_en, [], [], "roman_urdu")
+    assert agent.reply_problems("03009990063", long_en, [], [], "english") == []
+    assert agent.reply_problems("03009990063", "Ji, aap kaunsa cake chahte hain?", [], [], "roman_urdu") == []
+
+
+def test_order_details_always_go_to_the_agent():
+    import main
+    for t in ("Kal shaam 6 baje", "Raat 11 baje", "Address Gulshan", "Name Fatima", "Order cancel kar dein", "cash"):
+        assert main.ORDER_DETAIL.search(t), t
+    for t in ("Delivery charges kitne hain?", "Menu bhej dein", "Eggless cake banate hain?"):
+        assert not main.ORDER_DETAIL.search(t), t
