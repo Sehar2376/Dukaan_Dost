@@ -138,6 +138,21 @@ PAYMENT_QUESTION = re.compile(r"\b(easypaisa|jazz ?cash|bank|card|cash|cod|payme
                               re.IGNORECASE)
 
 
+# "Koi offer hai?", "Any deal?", "sale chal rahi hai?": answered by code from the saved loyalty reward.
+# Asking for a lower price ("kam karo", "discount do") is bargaining and still goes to the agent.
+OFFER_QUESTION = re.compile(r"\b(offers?|deals?|sale|promotion|koi discount hai|discount hai kya)\b", re.IGNORECASE)
+
+
+def offer_reply(language: str) -> str:
+    shop = db.get_shop()
+    every, pct = int(shop.get("loyalty_every", 5) or 0), float(shop.get("loyalty_percent", 10) or 0)
+    if every < 2 or pct <= 0:
+        return "There are no offers right now." if language == "english" else "Ji, abhi koi offer nahi chal raha."
+    if language == "english":
+        return f"Yes! Every {every}th order gets {pct:g}% off. What would you like to order?"
+    return f"Ji haan! Har {every}th order pe {pct:g}% discount milta hai. Aap kya order karna chahenge?"
+
+
 def payment_reply(message: str, language: str) -> str:
     methods = db.get_shop().get("payment_methods", [])
     listed = ", ".join(methods) or "cash on delivery"
@@ -202,6 +217,10 @@ def _handle(phone: str, message: str) -> ChatOut:
         return ChatOut(reply=ABUSE_REPLY, needs_owner=True, route=["nano"],
                        **{k: info[k] for k in ("language", "intent", "urgent")})
 
+    if OFFER_QUESTION.search(message) and not conv.get("draft_order") and not agent.asked_for_discount(phone):
+        reply = offer_reply(info["language"])
+        db.add_message(phone, "assistant", reply, {**info, "route": route})
+        return ChatOut(reply=reply, language=info["language"], intent=info["intent"], urgent=info["urgent"], route=route)
     if PAYMENT_QUESTION.search(message) and not conv.get("draft_order"):
         reply = payment_reply(message, info["language"])
         db.add_message(phone, "assistant", reply, {**info, "route": route})

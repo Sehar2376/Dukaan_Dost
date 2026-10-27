@@ -844,3 +844,14 @@ def test_faq_invented_delivery_time_and_halal_go_to_owner(monkeypatch):
 def test_faq_real_notice_time_is_allowed(monkeypatch):
     r = _faq(monkeypatch, json.dumps({"type": "answer", "reply": "Cakes ke liye 1 day pehle order karein."}))
     assert r.startswith("Cakes")  # the bakery's info says "Cakes need 1 day advance notice"
+
+
+def test_offer_question_tells_the_loyalty_reward(monkeypatch):
+    import main
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "bargain", "urgent": False})
+    r = main.handle_message("03009990090", "Koi offer hai?").reply
+    assert r.startswith("Ji haan! Har 5th order pe 10% discount")
+    shop = db.get_shop()
+    db.save_catalog(dict(shop, loyalty_every=0), db.get_products(), db.get_faqs())
+    assert "koi offer nahi" in main.handle_message("03009990091", "Koi offer hai?").reply
+    assert not main.OFFER_QUESTION.search("Thora kam kar dein")
