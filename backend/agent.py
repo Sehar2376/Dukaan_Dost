@@ -216,6 +216,8 @@ ROMAN_WORDS = {"hai", "hain", "ji", "jee", "aap", "kar", "ka", "ki", "ke", "mein
 # The order is only saved when confirm_order succeeds. Anything else that says so is a false promise.
 ORDER_CLAIM = re.compile(r"\border\s+(?:save|saved|confirmed|placed|booked)\b|\b(?:save|confirm|book)\s+ho\s?(?:gaya|gya|chuka)\b|"
                          r"\border\s*#|\border number\b", re.IGNORECASE)
+CONDITIONAL = re.compile(r"\b(karne|hone|ke baad|jab|agar|once|after|if|before|pehle|milega|aayega|ayega|will|"
+                         r"ke liye)\b", re.IGNORECASE)  # "order confirm hone ke baad ..." is not a claim
 SMS_CLAIM = re.compile(r"\bsms\b", re.IGNORECASE)
 TELEGRAPHIC = re.compile(r"(?:^|[.!?]\s+)(?:name|address|time|payment|quantity)\s*\?\s+"
                          r"(?:name|address|time|payment|quantity)\s*\?", re.IGNORECASE)
@@ -225,9 +227,9 @@ NO_SMS = "there is no SMS service - never promise an SMS"
 FRAGMENTS = "write complete, polite sentences instead of fragments like 'Name? Address?'"
 SOFT_MARKERS = ("reply in Roman Urdu", "internal word", NO_SMS, FRAGMENTS)  # style slips: fix once, never alert the owner
 NOT_SAVED_REPLY = {
-    "roman_urdu": "Abhi aap ka order confirm nahi hua. Mujhe aap ka naam, poora address, delivery ka time aur payment ka tareeqa chahiye.",
-    "urdu": "ابھی آپ کا آرڈر کنفرم نہیں ہوا۔ مجھے آپ کا نام، پورا پتہ، ڈیلیوری کا وقت اور ادائیگی کا طریقہ چاہیے۔",
-    "english": "Your order is not confirmed yet. Please send your name, full address, delivery time and payment method.",
+    "roman_urdu": "Abhi aap ka order confirm nahi hua. Jo cheez baaki hai wo bata dein, main foran order save kar deti hoon.",
+    "urdu": "ابھی آپ کا آرڈر کنفرم نہیں ہوا۔ جو چیز باقی ہے وہ بتا دیں، میں فوراً آرڈر محفوظ کر دیتی ہوں۔",
+    "english": "Your order is not confirmed yet. Please tell me what is still missing and I will save it right away.",
 }
 
 
@@ -332,7 +334,7 @@ def reply_problems(phone: str, reply: str, used: list, tool_results: list, langu
         problems.append("you used an internal word (flag, tool, system) with the customer - say it in normal words")
     statements = [x for x in re.split(r"(?<=[.!?\n])", reply or "") if not x.strip().endswith("?")]
     saved_now = any(r.get("ok") and r.get("order_id") for r in tool_results)
-    if not saved_now and any(ORDER_CLAIM.search(x) for x in statements):
+    if not saved_now and any(ORDER_CLAIM.search(x) and not CONDITIONAL.search(x) for x in statements):
         problems.append(FALSE_ORDER)
     if SMS_CLAIM.search(reply or ""):
         problems.append(NO_SMS)
@@ -344,10 +346,14 @@ def reply_problems(phone: str, reply: str, used: list, tool_results: list, langu
 
 
 def guard_note(problems: list[str]) -> str:
-    return ("SYSTEM NOTE: your last reply was not sent because " + "; ".join(problems) + ". "
+    note = ("SYSTEM NOTE: your last reply was not sent because " + "; ".join(problems) + ". "
             "Rewrite it using ONLY prices, discounts and totals returned by tools (call check_discount or "
             "preview_order if you need a new number). If the owner really needs to know, call flag_owner first. "
             "Do not mention this note.")
+    if FALSE_ORDER in problems:  # never send it back to build the same summary again
+        note += (" Do NOT call preview_order again unless the customer changed something. If the customer just said "
+                 "yes and a summary was already shown, call confirm_order now; otherwise ask only for what is missing.")
+    return note
 
 
 # A customer asking for a lower price, even with typos ("ptice kam?") or when Nano labels it something else.
@@ -420,6 +426,58 @@ def with_order_number(reply: str, results: list, language: str) -> str:
     return reply
 
 
+CONFIRMED_REPLY = {
+    "roman_urdu": "Aap ka order confirm ho gaya hai. Order number {id}, total Rs {total:,}, delivery {when}. Shukriya!",
+    "urdu": "آپ کا آرڈر کنفرم ہو گیا ہے۔ آرڈر نمبر {id}، کل Rs {total:,}، ڈیلیوری {when}۔ شکریہ!",
+    "english": "Your order is confirmed. Order number {id}, total Rs {total:,}, delivery {when}. Thank you!",
+}
+
+
+ALREADY_CONFIRMED = {
+    "roman_urdu": "Aap ka order pehle hi confirm ho chuka hai. Order number {id}.",
+    "urdu": "آپ کا آرڈر پہلے ہی کنفرم ہو چکا ہے۔ آرڈر نمبر {id}۔",
+    "english": "Your order is already confirmed. Order number {id}.",
+}
+
+
+CHANGE_WORDS = re.compile(r"\b(change|badal|badlo|tabdeel|time|address|name|naam|quantity|aur|add|replace|kam|discount|"
+                          r"instead|bajay|lekin|but|wait|ruko|\d+)\b|\?", re.IGNORECASE)
+
+
+def plain_yes(phone: str) -> bool:
+    """The customer's last message is a short, clear yes ('Haan, confirm', 'ji kar dein'), not a change request."""
+    msgs = [m["text"] for m in db.get_conversation(phone)["messages"] if m["role"] == "customer"]
+    if not msgs or not tools.customer_confirmed(phone):
+        return False
+    text = msgs[-1].strip()
+    return len(text.split()) <= 5 and not CHANGE_WORDS.search(text)
+
+
+def confirm_in_code(phone: str, language: str) -> dict | None:
+    """The customer clearly said yes to a summary we already showed: save it here. The AI is not involved, so it
+    cannot re-send the summary or promise something it did not do."""
+    conv = db.get_conversation(phone)
+    draft = conv.get("draft_order")
+    if not plain_yes(phone):
+        return None
+    if not draft:  # a second "confirm" right after the order was saved: say so, never build a new summary
+        shop_msgs = [m["text"] for m in conv["messages"] if m["role"] != "customer"]
+        found = re.search(r"\bord_\w+", shop_msgs[-1]) if shop_msgs else None
+        if found:
+            return {"reply": ALREADY_CONFIRMED.get(language, ALREADY_CONFIRMED["roman_urdu"]).format(id=found.group(0)),
+                    "tools_used": [], "order_summary": None}
+        return None
+    last_shop = [m["text"] for m in conv["messages"] if m["role"] != "customer"]
+    if not last_shop or not re.search(r"confirm|summary|کنفرم", last_shop[-1], re.IGNORECASE):
+        return None  # the summary was not shown or no confirmation was asked: the agent decides
+    result = tools.confirm_order(phone)
+    if not result.get("ok"):
+        return None  # let the agent explain (for example, a save problem)
+    text = CONFIRMED_REPLY.get(language, CONFIRMED_REPLY["roman_urdu"]).format(
+        id=result["order_id"], total=result["total"], when=draft.get("delivery_time", ""))
+    return {"reply": text, "tools_used": ["confirm_order"], "order_summary": None}
+
+
 def run_agent(phone: str, language: str, intent: str = "") -> dict:
     """Returns {"reply": str, "tools_used": [...], "order_summary": dict|None}."""
     if ai.MOCK:  # no API key: rule-based practice agent that uses the same tools (see practice.py)
@@ -427,6 +485,9 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
 
         return practice.run(phone)
 
+    saved = confirm_in_code(phone, language)
+    if saved:
+        return saved
     messages = build_messages(phone, language)
     used, summary, nudged, discount_nudged, guarded, time_nudged = [], None, 0, False, False, False
     results = []  # every tool result this turn: numbers in them are allowed in the reply
