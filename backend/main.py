@@ -239,9 +239,12 @@ def _handle(phone: str, message: str) -> ChatOut:
             # our fixed "owner will confirm" lines are left out: a chat full of them makes Nano copy them
             recent = [m for m in conv["messages"][:-1] if m["role"] in ("customer", "assistant", "owner")
                       and m["text"] not in ai.OWNER_WILL_CONFIRM.values()][-6:]
-            history = "\n".join(f"{'Customer' if m['role'] == 'customer' else 'Shop'}: {m['text'][:300]}" for m in recent)
+            history = "\n".join(f"{'Customer' if m['role'] == 'customer' else ('Owner' if m['role'] == 'owner' else 'Shop')}: "
+                                f"{m['text'][:300]}" for m in recent)
+            owner_said = "\n".join(agent.owner_messages(phone))
+            extra = {"owner_said": owner_said} if owner_said else {}  # only after an owner takeover
             reply = ai.answer_faq(message, info["language"], db.shop_info_text(), shop["name"],
-                                  shop.get("city", ""), history=history)
+                                  shop.get("city", ""), history=history, **extra)
             if NEEDS_OWNER in reply and PRICE_QUESTION.search(message):
                 reply = menu_reply(info["language"])  # a price/menu question is answered from the database, never guessed
     except RuntimeError:
@@ -257,6 +260,7 @@ def _handle(phone: str, message: str) -> ChatOut:
         db.add_flag("complaint" if info["intent"] == "complaint" else "urgent", phone, message[:160])
         needs_owner = True
     reply = PRODUCT_ID.sub("", reply).strip()  # never show internal ids like [p1] to the customer
+    reply = agent.polish_reply(reply, info["language"])  # one voice, readable dates, no fake menu changes
     if not reply:
         reply = FALLBACK_REPLY
 

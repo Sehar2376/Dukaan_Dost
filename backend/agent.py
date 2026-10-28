@@ -31,7 +31,8 @@ NARRATION = re.compile(
     r"\b(let me|let's (?:check|see|fetch|call)|i'?ll (?:get|call|fetch|search|check|look|use|run|confirm the order)|"
     r"i will (?:get|call|fetch|search|check|use|run)|fetch(?:ing)?|get products|get_products|get_customer|"
     r"preview_order|preview order|confirm_order|check_discount|flag_owner|create_booking|flag(?:ged)? (?:the )?owner|tool calls?|"
-    r"main unse poochta|main unse poochti|the customer (?:has|hasn't|wants|said)|customer abhi tak)\b",
+    r"main unse poochta|main unse poochti|the customer (?:has|hasn't|wants|said)|customer abhi tak|"
+    r"let's preview|preview with|proceeding normally|system says|need customer data|call now|check discount|ask details)\b",
     re.IGNORECASE)
 
 
@@ -101,6 +102,17 @@ def draft_info(phone: str) -> str:
             "(waiting for the customer to confirm).")
 
 
+def owner_messages(phone: str, limit: int = 6) -> list[str]:
+    """What the owner personally wrote to this customer (after a takeover)."""
+    return [m["text"] for m in db.get_conversation(phone)["messages"] if m["role"] == "owner" and m["text"]][-limit:]
+
+
+OWNER_BLOCK = ("\n\nTHE OWNER ALREADY WROTE TO THIS CUSTOMER (these lines are in the chat above as shop replies). "
+               "They are final: the owner personally decided them. Use them (prices, times, answers), tell the "
+               "customer plainly what the owner said if it still matters, and never say the owner will confirm "
+               "something the owner already answered:\n")
+
+
 def build_messages(phone: str, language: str) -> list[dict]:
     shop = db.get_shop()
     now = db.now_karachi()
@@ -119,6 +131,9 @@ def build_messages(phone: str, language: str) -> list[dict]:
         language_instruction=ai.LANG_INSTRUCTIONS.get(language, ai.LANG_INSTRUCTIONS["roman_urdu"]),
         customer_info=customer_info(phone), shop_info=db.shop_info_text(),
     ) + "\n\nDATES AND EARLIEST TIMES (trust these, do not calculate them yourself)\n" + dates
+    said = owner_messages(phone)
+    if said:
+        system += OWNER_BLOCK + "\n".join(f"- {t[:300]}" for t in said)
     messages = [{"role": "system", "content": system}]
     for m in db.get_conversation(phone)["messages"][-HISTORY:]:
         if m["role"] in ("customer", "assistant", "owner") and m["text"]:
@@ -141,7 +156,8 @@ SAFE_PRICE_REPLY = "Ji, is price ke liye main owner se confirm kar ke aap ko bat
 # left out here: bargaining talks about them all the time and the price guard above already checks the numbers.
 AGENT_RISKY = re.compile(r"\b(eggless|egg free|sugar[- ]?free|gluten|vegan|refunds?|exchange|replace\w*|"
                          r"pickup|pick up|warranty|guarantee|free|custom|halal|organic|preservatives?)\b", re.IGNORECASE)
-INTERNAL_WORDS = re.compile(r"\b(flag(?:ged|ging)?|flag_owner|tool|tools|system|shop info|product[_ ]id)\b", re.IGNORECASE)
+INTERNAL_WORDS = re.compile(r"\b(flag(?:ged|ging)?|flag_owner|tool|tools|system|shop info|product[_ ]id|preview|proceeding|"
+                            r"customer data)\b", re.IGNORECASE)
 NOT_IN_SHOP = "is not in the shop's info"
 
 
@@ -174,6 +190,11 @@ def allowed_numbers(phone: str, tool_results: list) -> tuple[set, set]:
     sources = [db.shop_info_text(), json.dumps(conv.get("draft_order") or {})] + [json.dumps(r) for r in tool_results]
     # numbers the customer gave as their budget may be repeated back ("Rs 3,000 ke budget mein...")
     sources += [m["text"] for m in conv["messages"] if m["role"] == "customer" and "budget" in m["text"].lower()]
+    # prices and percents the OWNER typed to this customer are the owner's own decision: repeating them is fine
+    owner_text = [m["text"] for m in conv["messages"] if m["role"] == "owner" and m["text"]]
+    sources += owner_text
+    for t in owner_text:
+        percents |= {float(x) for x in PERCENT.findall(t)}
     for src in sources:
         amounts |= {int(n) for n in re.findall(r"\d+", src.replace(",", ""))}
     return amounts, percents
@@ -190,6 +211,89 @@ ENGLISH_WORDS = {"the", "we", "you", "i'll", "i", "let", "let's", "have", "haven
                  "too", "big", "suggest", "fewer", "contact", "soon", "they'll", "list", "got", "with"}
 ROMAN_WORDS = {"hai", "hain", "ji", "jee", "aap", "kar", "ka", "ki", "ke", "mein", "nahi", "hum", "ko", "se", "bhi",
                "kya", "dein", "chahiye", "theek", "shukriya", "batayein", "bata"}
+
+
+# The order is only saved when confirm_order succeeds. Anything else that says so is a false promise.
+ORDER_CLAIM = re.compile(r"\border\s+(?:save|saved|confirmed|placed|booked)\b|\b(?:save|confirm|book)\s+ho\s?(?:gaya|gya|chuka)\b|"
+                         r"\border\s*#|\border number\b", re.IGNORECASE)
+SMS_CLAIM = re.compile(r"\bsms\b", re.IGNORECASE)
+TELEGRAPHIC = re.compile(r"(?:^|[.!?]\s+)(?:name|address|time|payment|quantity)\s*\?\s+"
+                         r"(?:name|address|time|payment|quantity)\s*\?", re.IGNORECASE)
+FALSE_ORDER = ("you said the order is saved or confirmed, but confirm_order did not succeed this turn - the order is "
+               "NOT saved; ask for what is missing, or show the summary and ask 'Confirm kar dein?'")
+NO_SMS = "there is no SMS service - never promise an SMS"
+FRAGMENTS = "write complete, polite sentences instead of fragments like 'Name? Address?'"
+SOFT_MARKERS = ("reply in Roman Urdu", "internal word", NO_SMS, FRAGMENTS)  # style slips: fix once, never alert the owner
+NOT_SAVED_REPLY = {
+    "roman_urdu": "Abhi aap ka order confirm nahi hua. Mujhe aap ka naam, poora address, delivery ka time aur payment ka tareeqa chahiye.",
+    "urdu": "ابھی آپ کا آرڈر کنفرم نہیں ہوا۔ مجھے آپ کا نام، پورا پتہ، ڈیلیوری کا وقت اور ادائیگی کا طریقہ چاہیے۔",
+    "english": "Your order is not confirmed yet. Please send your name, full address, delivery time and payment method.",
+}
+
+
+def is_soft(problem: str) -> bool:
+    return any(m in problem for m in SOFT_MARKERS)
+
+
+def owner_note(problems: list[str]) -> str:
+    """The owner reads this in the Inbox: plain words only, never our internal checks."""
+    text = "; ".join(problems)
+    if NOT_IN_SHOP in text:
+        return "Customer asked about something your shop info doesn't cover (for example eggless or refund). Please reply."
+    if CANT_CANCEL in text:
+        return "Customer wants to cancel or change an order. Please handle it in Orders."
+    if "Rs " in text or "%" in text:
+        return "Customer asked about a price or discount the assistant could not confirm. Please reply."
+    return "The assistant was not sure how to reply to this customer. Please check the chat."
+
+
+def tidy(reply: str) -> str:
+    """Last resort for style slips: drop the sentences that carry internal words or an SMS promise."""
+    parts = re.split(r"(?<=[.!?\n])\s+", (reply or "").strip())
+    kept = [p for p in parts if p.strip() and not INTERNAL_WORDS.search(p) and not SMS_CLAIM.search(p)]
+    return " ".join(kept).strip()
+
+
+CLOCK = re.compile(r"(?<![\d:])(\d{1,2})(?::(\d{2}))?\s*(baje|baja|bje|bajay|am|pm)\b", re.IGNORECASE)
+
+
+def clock_time(text: str) -> str | None:
+    """'aj raat 11 baja' -> '23:00'. Only when the day-part (raat/shaam/...) or am/pm makes it clear."""
+    t = (text or "").lower()
+    m = CLOCK.search(t)
+    if not m:
+        return None
+    h, mi, unit = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+    if h > 24 or mi > 59:
+        return None
+    if unit == "pm":
+        h = h + 12 if h < 12 else h
+    elif unit == "am":
+        h = 0 if h == 12 else h
+    elif re.search(r"\b(raat|rat|night)\b", t):
+        h = h + 12 if 6 <= h <= 11 else (0 if h == 12 else h)
+    elif re.search(r"\b(shaam|sham|evening)\b", t):
+        h = h + 12 if h < 12 else h
+    elif re.search(r"\b(dopahar|dopehar|dupaar|dupahar|afternoon)\b", t):
+        h = h + 12 if 1 <= h <= 6 else h
+    elif re.search(r"\b(subah|subha|morning)\b", t):
+        pass
+    else:
+        return None
+    return f"{h % 24:02d}:{mi:02d}"
+
+
+def out_of_hours(phone: str) -> tuple[str, str, str] | None:
+    """If the customer's last message names a clock time outside every shop-open window: (time, open, close)."""
+    msgs = [m for m in db.get_conversation(phone)["messages"] if m["role"] == "customer"]
+    when = clock_time(msgs[-1]["text"]) if msgs else None
+    hours = db.get_shop().get("opening_hours") or {}
+    windows = [v for v in hours.values() if v]
+    if not when or not windows:
+        return None
+    if any(o <= when <= c for o, c in windows):
+        return None
+    return when, windows[0][0], windows[0][1]
 
 
 def sounds_english(text: str) -> bool:
@@ -227,6 +331,13 @@ def reply_problems(phone: str, reply: str, used: list, tool_results: list, langu
     if INTERNAL_WORDS.search(reply or ""):
         problems.append("you used an internal word (flag, tool, system) with the customer - say it in normal words")
     statements = [x for x in re.split(r"(?<=[.!?\n])", reply or "") if not x.strip().endswith("?")]
+    saved_now = any(r.get("ok") and r.get("order_id") for r in tool_results)
+    if not saved_now and any(ORDER_CLAIM.search(x) for x in statements):
+        problems.append(FALSE_ORDER)
+    if SMS_CLAIM.search(reply or ""):
+        problems.append(NO_SMS)
+    if TELEGRAPHIC.search(reply or ""):
+        problems.append(FRAGMENTS)
     if any(OWNER_PROMISE.search(x) for x in statements) and "flag_owner" not in used:
         problems.append("you told the customer about the owner but did not call flag_owner")
     return problems
@@ -253,6 +364,62 @@ DISCOUNT_NUDGE = ("SYSTEM NOTE: the customer asked for a lower price. Call check
                   "they are buying (see ORDER IN PROGRESS or the chat) and offer exactly what it returns.")
 
 
+CLOSED_WORDS = ("nahi", "not possible", "closed", "band", "outside", "possible nahi", "mumkin")
+TIME_NUDGE = ("SYSTEM NOTE: the customer asked for {t}, which is outside shop hours ({o}-{c}). Tell them politely "
+              "that time is not possible and offer a time inside shop hours. Do not accept this time.")
+
+
+# ---- last polish on every customer reply (code, not the AI) ----
+MALE_VERB = re.compile(r"\b(\w{2,}?)ta (hoon|hun)\b", re.IGNORECASE)
+MALE_FUTURE = re.compile(r"\b(\w+?)(unga|oonga)\b", re.IGNORECASE)
+MALE_GAYA = re.compile(r"\b(main|mein) (samajh|aa|ja|ho) gaya\b", re.IGNORECASE)
+ISO_TIME = re.compile(r"\b(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})\b")
+FALSE_ACTION = re.compile(
+    r"\b(menu|price|prices|settings?|stock)\b.{0,25}\b(restore|restored|update|updated|change|changed|reset|delete|deleted)\b"
+    r".{0,15}\b(ho gaya|ho gayi|kar diya|kar di|done|ho chuka)\b|"
+    r"\b(restore|restored|reset)\b.{0,20}\b(ho gaya|ho gayi|kar diya|kar di|done)\b", re.IGNORECASE)
+CANT_CHANGE = {"roman_urdu": "Ji, menu aur settings sirf owner badal sakte hain. Main aap ko abhi ka menu bata sakti hoon.",
+               "urdu": "جی، مینو اور سیٹنگز صرف اونر بدل سکتے ہیں۔ میں آپ کو ابھی کا مینو بتا سکتی ہوں۔",
+               "english": "Only the owner can change the menu or settings. I can tell you the current menu."}
+
+
+def _fem(m):  # "karta hoon" -> "karti hoon": the shop assistant always speaks as a woman
+    return f"{m.group(1)}ti {m.group(2)}"
+
+
+def _human_time(m):
+    from datetime import datetime
+    try:
+        d = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5)))
+        return f"{d.day} {d:%b}, {d.hour % 12 or 12}:{d.minute:02d} {'am' if d.hour < 12 else 'pm'}"
+    except ValueError:
+        return m.group(0)
+
+
+def polish_reply(reply: str, language: str) -> str:
+    """Final touch: one voice (woman), readable dates, and no claim of changing the shop's menu or settings."""
+    if not reply:
+        return reply
+    if FALSE_ACTION.search(reply):
+        return CANT_CHANGE.get(language, CANT_CHANGE["roman_urdu"])
+    reply = ISO_TIME.sub(_human_time, reply)
+    if language != "english":
+        reply = MALE_VERB.sub(_fem, reply)
+        reply = MALE_FUTURE.sub(lambda m: m.group(1) + ("ungi" if m.group(2).lower() == "unga" else "oongi"), reply)
+        reply = MALE_GAYA.sub(lambda m: f"{m.group(1)} {m.group(2)} gayi", reply)
+    return reply
+
+
+def with_order_number(reply: str, results: list, language: str) -> str:
+    """A saved order always shows its real number, never a placeholder or a promise of an SMS."""
+    done = next((r for r in results if r.get("ok") and r.get("order_id")), None)
+    if done and str(done["order_id"]) not in (reply or ""):
+        line = (f"Your order number is {done['order_id']}." if language == "english"
+                else f"Aap ka order number {done['order_id']} hai.")
+        reply = f"{(reply or '').rstrip()} {line}".strip()
+    return reply
+
+
 def run_agent(phone: str, language: str, intent: str = "") -> dict:
     """Returns {"reply": str, "tools_used": [...], "order_summary": dict|None}."""
     if ai.MOCK:  # no API key: rule-based practice agent that uses the same tools (see practice.py)
@@ -261,7 +428,7 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
         return practice.run(phone)
 
     messages = build_messages(phone, language)
-    used, summary, nudged, discount_nudged, guarded = [], None, 0, False, False
+    used, summary, nudged, discount_nudged, guarded, time_nudged = [], None, 0, False, False, False
     results = []  # every tool result this turn: numbers in them are allowed in the reply
     start = time.monotonic()
     for _ in range(MAX_STEPS):
@@ -284,22 +451,41 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": DISCOUNT_NUDGE})
                 continue
+            late = out_of_hours(phone)
+            if (late and not time_nudged and not any(w in reply.lower() for w in CLOSED_WORDS)):
+                # a clock time outside shop hours is refused in code, even before the order is complete
+                time_nudged = True
+                messages.append({"role": "assistant", "content": reply})
+                messages.append({"role": "user", "content": TIME_NUDGE.format(t=late[0], o=late[1], c=late[2])})
+                continue
             if not reply:
                 break  # still only narration: alert the owner below instead of sending it
             problems = reply_problems(phone, reply, used, results, language)
-            if problems and not guarded:  # made-up price or a false "owner" line: ask it to fix the reply, once
+            if problems and not guarded:  # made-up price, false promise or style slip: ask it to fix the reply, once
                 guarded = True
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({"role": "user", "content": guard_note(problems)})
                 continue
-            if problems:  # still wrong: never send a made-up price; alert the owner so the promise is true
-                tools.flag_owner(phone, "Assistant could not give a valid reply: " + "; ".join(problems)[:200], "question")
-                used.append("flag_owner")
-                if any(NOT_IN_SHOP in p or CANT_CANCEL in p for p in problems):  # never sent
-                    reply = ai.OWNER_WILL_CONFIRM.get(language, ai.OWNER_WILL_CONFIRM["roman_urdu"])
-                elif any("Rs " in p or "%" in p for p in problems):
-                    reply = SAFE_PRICE_REPLY
-            return {"reply": reply, "tools_used": used, "order_summary": summary}
+            if problems:
+                hard = [p for p in problems if not is_soft(p)]
+                if not hard:  # only a style slip: send a cleaned reply, the owner doesn't need an alert
+                    reply = tidy(reply)
+                    if not reply:
+                        tools.flag_owner(phone, owner_note(problems), "question")
+                        used.append("flag_owner")
+                        reply = ai.OWNER_WILL_CONFIRM.get(language, ai.OWNER_WILL_CONFIRM["roman_urdu"])
+                elif FALSE_ORDER in hard and len(hard) == 1:  # it claimed a saved order that does not exist
+                    reply = NOT_SAVED_REPLY.get(language, NOT_SAVED_REPLY["roman_urdu"])
+                else:  # still wrong: never send a made-up price; alert the owner so the promise is true
+                    tools.flag_owner(phone, owner_note(hard), "question")
+                    used.append("flag_owner")
+                    if any(NOT_IN_SHOP in p or CANT_CANCEL in p for p in hard):  # never sent
+                        reply = ai.OWNER_WILL_CONFIRM.get(language, ai.OWNER_WILL_CONFIRM["roman_urdu"])
+                    elif FALSE_ORDER in hard:
+                        reply = NOT_SAVED_REPLY.get(language, NOT_SAVED_REPLY["roman_urdu"])
+                    elif any("Rs " in p or "%" in p for p in hard):
+                        reply = SAFE_PRICE_REPLY
+            return {"reply": with_order_number(reply, results, language), "tools_used": used, "order_summary": summary}
 
         messages.append({"role": "assistant", "content": msg.content or "",
                          "tool_calls": [{"id": tc.id, "type": "function",
@@ -319,6 +505,6 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
             messages.append({"role": "tool", "tool_call_id": tc.id,
                              "content": json.dumps(result, ensure_ascii=False)})
 
-    tools.flag_owner(phone, "Assistant could not finish this conversation", "urgent")
+    tools.flag_owner(phone, "The assistant took too long on this chat. Please check it.", "urgent")
     return {"reply": "Ji, main owner se confirm kar ke abhi batati hoon.", "tools_used": used,
             "order_summary": summary}

@@ -91,6 +91,7 @@ def check_discount(phone: str, product_id: str, requested_percent: float = 0) ->
         return {"error": f"Unknown product_id {product_id}. Call get_products first."}
     conv = db.get_conversation(phone)
     state = conv["discounts"].get(product_id, {"attempts": 0, "percent": 0})
+    prev = state.get("percent", 0)  # what was already offered: a later answer is never lower
     turn = sum(1 for m in conv["messages"] if m["role"] == "customer")
     if state.get("turn") != turn:  # one step per customer message, however many times the AI calls this
         state["attempts"] += 1
@@ -105,8 +106,9 @@ def check_discount(phone: str, product_id: str, requested_percent: float = 0) ->
         offer, final = max_pct, True
     last = next((m["text"] for m in reversed(conv["messages"]) if m["role"] == "customer"), "")
     said = requested_percent and re.search(rf"\b{int(requested_percent)}\s*(?:%|percent|fisad)", last, re.I)
-    if said and 0 < requested_percent < offer:
+    if said and prev < requested_percent < offer:
         offer, final = requested_percent, False  # the customer asked for less than we'd give
+    offer = max(offer, prev)  # never raise the price after a lower offer was made
     state["percent"] = offer
     conv["discounts"][product_id] = state
     db.save_conversation(phone, conv)

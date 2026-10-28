@@ -250,7 +250,7 @@ def check_faq_answer(data: dict, shop_info: str) -> tuple[str, list[str]]:
 
 
 def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city: str,
-               history: str = "") -> str:
+               history: str = "", owner_said: str = "") -> str:
     """Nano answers a question from saved shop info only, and must quote the shop info it used.
 
     Code then checks every quote, price and percentage. Anything it can't prove is not sent: the customer
@@ -265,8 +265,13 @@ def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city
     )
     if history:
         system += "\n\nRECENT CHAT (oldest first, for context only):\n" + history
+    if owner_said:  # the owner took over and wrote this: it is final and may be repeated to the customer
+        system += ("\n\nTHE OWNER ALREADY WROTE TO THIS CUSTOMER (final; use it, tell the customer plainly what "
+                   "the owner said, never say the owner will confirm something the owner already answered):\n"
+                   + owner_said)
+        shop_info = shop_info + "\nOWNER SAID IN THIS CHAT: " + owner_said
     safe = OWNER_WILL_CONFIRM.get(language, OWNER_WILL_CONFIRM["roman_urdu"]) + " [NEEDS_OWNER]"
-    raw = chat(NANO, system, message, temperature=0.2, max_tokens=450, timeout=15)
+    raw = chat(NANO, system, message, temperature=0.2, max_tokens=700, timeout=15)
     try:
         data = extract_json(raw)
         if not isinstance(data, dict) or not data.get("reply"):
@@ -274,7 +279,15 @@ def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city
     except (ValueError, json.JSONDecodeError):
         # Nano answered in plain text instead of JSON: still run the same hard checks on that text
         text = strip_thinking(raw).replace(NEEDS_OWNER_TAG, "").strip()
-        data = {"type": "unknown" if NEEDS_OWNER_TAG in raw else "answer", "reply": text}
+        if text.lstrip().startswith(("{", "[")) or '"reply"' in text:  # cut-off JSON: never show the raw braces
+            m = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+            try:
+                text = json.loads('"' + m.group(1) + '"') if m else ""
+            except ValueError:
+                text = ""
+            data = {"type": "answer" if text else "unknown", "reply": text}
+        else:
+            data = {"type": "unknown" if NEEDS_OWNER_TAG in raw else "answer", "reply": text}
     kind, problems = check_faq_answer(data, shop_info)
     print(f"FAQ check: type={data.get('type')} -> {kind} {problems}")  # shows in Vercel logs
     return str(data["reply"]).strip() if kind in ("answer", "small") else safe
