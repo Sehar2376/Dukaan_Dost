@@ -906,3 +906,160 @@ def test_owner_marks_item_sold_out_and_available_again():
     assert not res["ok"] and "out of stock" in res["problems"][0]
     assert client.patch("/products/p1", json={"in_stock": True}).json()["in_stock"] is True
     assert client.patch("/products/nope", json={"in_stock": True}).status_code == 404
+
+
+# ------------------------------------------------------------------ v16: honest orders, calm style, clean alerts
+def test_smaller_percent_never_raises_the_price():
+    phone = "03009990200"
+    say(phone, "kam karo")
+    assert tools.check_discount(phone, "p2")["discount_percent"] == 5
+    say(phone, "aur kam")
+    assert tools.check_discount(phone, "p2")["discount_percent"] == 10
+    say(phone, "bas 2% kam karde")
+    r = tools.check_discount(phone, "p2", 2)
+    assert r["discount_percent"] == 10  # never back up to a smaller discount
+
+
+def test_false_order_claims_are_caught():
+    phone = "03009990201"
+    for bad in ("Order placed. Your order # is ready.", "Order save hogaya ji, number SMS se aayega.",
+                "Order confirmed. Cash on delivery."):
+        assert agent.reply_problems(phone, bad, [], [], "roman_urdu"), bad
+    saved = [{"ok": True, "order_id": "ORD-7"}]
+    assert agent.reply_problems(phone, "Order confirm ho gaya. Aap ka order number ORD-7 hai.", ["confirm_order"],
+                                saved, "roman_urdu") == []
+    assert agent.reply_problems(phone, "Order confirm kar dein?", [], [], "roman_urdu") == []  # a question is fine
+
+
+def test_style_slips_are_detected_and_tidied():
+    phone = "03009990202"
+    assert agent.reply_problems(phone, "Name? Address? Confirm 2 pineapple cakes.", [], [], "roman_urdu")
+    assert agent.reply_problems(phone, "Ji, order number SMS se aayega.", [], [], "roman_urdu")
+    assert agent.clean_reply("Let's preview with current info anyway? Aap ka naam kya hai?") == "Aap ka naam kya hai?"
+    assert agent.clean_reply("Proceeding normally. Ask details. Ji, address batayein.") == "Ji, address batayein."
+    assert agent.tidy("System says address issue. Ji, address dobara batayein.") == "Ji, address dobara batayein."
+
+
+def test_owner_notes_hide_internal_checks():
+    notes = [agent.owner_note([f"'Eggless' {agent.NOT_IN_SHOP} - never promise it; call flag_owner"]),
+             agent.owner_note(["you told the customer about the owner but did not call flag_owner"]),
+             agent.owner_note(["Rs 1,666 is not a price the system allows"]),
+             agent.owner_note([agent.FALSE_ORDER])]
+    for n in notes:
+        assert "flag_owner" not in n and "confirm_order" not in n and "system" not in n.lower() and "Roman Urdu" not in n
+
+
+def test_order_number_is_always_shown():
+    out = agent.with_order_number("Order confirm ho gaya.", [{"ok": True, "order_id": "ORD-9"}], "roman_urdu")
+    assert "ORD-9" in out
+    assert agent.with_order_number("Order ORD-9 confirm.", [{"ok": True, "order_id": "ORD-9"}], "roman_urdu") == "Order ORD-9 confirm."
+    assert agent.with_order_number("Ji, cake Rs 2,000 hai.", [], "roman_urdu") == "Ji, cake Rs 2,000 hai."
+
+
+def test_clock_time_reading():
+    assert agent.clock_time("aj raat 11 baja") == "23:00"
+    assert agent.clock_time("kal shaam 6 baje") == "18:00"
+    assert agent.clock_time("kal 3am par") == "03:00"
+    assert agent.clock_time("28 oct 5pm") == "17:00"
+    assert agent.clock_time("6 baje") is None  # not clear enough: the order agent asks
+
+
+HOURS = {d: ["09:00", "22:00"] for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}
+
+
+def test_false_order_twice_gives_honest_reply_without_alert(monkeypatch):
+    phone = "03009990203"
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: NS(tool_calls=None, content="Order placed. Your order # is ready."))
+    say(phone, "haan confirm")
+    out = agent.run_agent(phone, "roman_urdu", "order")
+    assert out["reply"] == agent.NOT_SAVED_REPLY["roman_urdu"] and "flag_owner" not in out["tools_used"]
+
+
+def test_style_slip_twice_is_sent_without_alert(monkeypatch):
+    phone = "03009990204"
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", lambda m, msgs, tl: NS(tool_calls=None, content="Name? Address? Time? Payment?"))
+    say(phone, "pineapple chahiye")
+    out = agent.run_agent(phone, "roman_urdu", "order")
+    assert out["reply"] and "flag_owner" not in out["tools_used"]
+
+
+def test_time_outside_shop_hours_is_refused_early(monkeypatch):
+    phone = "03009990205"
+    shop = dict(db.get_shop(), opening_hours=HOURS)
+    monkeypatch.setattr(db, "get_shop", lambda: shop)
+    seen = []
+
+    def fake(model, messages, tl):
+        seen.append(messages[-1]["content"])
+        if len(seen) == 1:
+            return NS(tool_calls=None, content="Aj raat 11 baje delivery ho jayegi. Address batayein.")
+        return NS(tool_calls=None, content="Maaf kijiye, raat 11 baje delivery possible nahi, hum 9 se 10 tak hain.")
+
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat_with_tools", fake)
+    say(phone, "aj raat 11 baja")
+    out = agent.run_agent(phone, "roman_urdu", "order")
+    assert "outside shop hours" in seen[1] and "possible nahi" in out["reply"]
+
+
+# ------------------------------------------------------------------ v16b: after an owner takeover the owner's word is final
+def test_owner_quoted_price_is_allowed_and_shown_to_the_ai():
+    phone = "03009990210"
+    say(phone, "kal ke liye 3 chocolate cake ka kitna hoga?")
+    db.add_message(phone, "owner", "Ji, 3 cakes ka Rs 5,400 ho jayega, delivery free.")
+    amounts, percents = agent.allowed_numbers(phone, [])
+    assert 5400 in amounts
+    assert agent.reply_problems(phone, "Owner ne bataya hai ke 3 cakes Rs 5,400 mein milen ge.", [], [], "roman_urdu") == []
+    msgs = agent.build_messages(phone, "roman_urdu")
+    assert "THE OWNER ALREADY WROTE" in msgs[0]["content"] and "5,400" in msgs[0]["content"]
+
+
+def test_price_not_said_by_owner_is_still_blocked():
+    phone = "03009990211"
+    say(phone, "cake kitne ka?")
+    assert agent.reply_problems(phone, "Cake Rs 7,321 ka hai.", [], [], "roman_urdu")  # nobody said 7,321
+
+
+def test_faq_path_receives_owner_words_after_takeover(monkeypatch):
+    import main
+    phone = "03009990212"
+    seen = {}
+
+    def fake_faq(message, language, shop_info, shop_name, city, history="", owner_said=""):
+        seen["owner_said"], seen["history"] = owner_said, history
+        return "Ji, owner ke mutabiq Rs 5,400 hai."
+
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "answer_faq", fake_faq)
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})
+    say(phone, "kitne ka hoga?")
+    db.add_message(phone, "owner", "Rs 5,400 ho jayega.")
+    TestClient(main.app).post("/chat", json={"phone": phone, "message": "aur batayein kya hoga?"})
+    assert "5,400" in seen.get("owner_said", "") and "Owner: Rs 5,400" in seen["history"]
+
+
+# ------------------------------------------------------------------ v16c: one voice, readable dates, no raw JSON, no fake actions
+def test_polish_speaks_as_a_woman_and_reads_dates():
+    p = agent.polish_reply
+    assert p("Main dobara try karta hoon.", "roman_urdu") == "Main dobara try karti hoon."
+    assert p("Jaldi jawab deta hoon. Main samajh gaya.", "roman_urdu") == "Jaldi jawab deti hoon. Main samajh gayi."
+    assert p("Roman Urdu mein hi jawab doonga.", "roman_urdu") == "Roman Urdu mein hi jawab doongi."
+    assert p("Earliest delivery: 2026-10-28 09:00.", "roman_urdu") == "Earliest delivery: 28 Oct, 9:00 am."
+    assert p("I will do it. 2026-10-28 18:30", "english") == "I will do it. 28 Oct, 6:30 pm"  # English wording untouched
+    assert p("Aap ka order ho jayega.", "roman_urdu") == "Aap ka order ho jayega."
+
+
+def test_cannot_claim_to_change_menu_or_settings():
+    assert agent.polish_reply("Menu restore ho gaya. Ab kya lenge?", "roman_urdu") == agent.CANT_CHANGE["roman_urdu"]
+    assert agent.polish_reply("Price update kar diya.", "roman_urdu") == agent.CANT_CHANGE["roman_urdu"]
+    assert agent.polish_reply("Ji, menu yeh hai: Cake Rs 2,000.", "roman_urdu") == "Ji, menu yeh hai: Cake Rs 2,000."
+
+
+def test_cut_off_json_is_never_shown_to_the_customer(monkeypatch):
+    cut = '{"type": "answer", "reply": "Ji, hum England mein delivery nahi karte.", "evidence": ["abc", "def'
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "chat", lambda *a, **k: cut)
+    out = ai.answer_faq("England delivery?", "roman_urdu", db.shop_info_text(), "Noor", "Karachi")
+    assert "{" not in out and "evidence" not in out
