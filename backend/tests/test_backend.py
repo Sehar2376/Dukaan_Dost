@@ -1063,3 +1063,51 @@ def test_cut_off_json_is_never_shown_to_the_customer(monkeypatch):
     monkeypatch.setattr(ai, "chat", lambda *a, **k: cut)
     out = ai.answer_faq("England delivery?", "roman_urdu", db.shop_info_text(), "Noor", "Karachi")
     assert "{" not in out and "evidence" not in out
+
+
+# ------------------------------------------------------------------ v16d: "Haan, confirm" saves the order in code
+def _draft(phone):
+    r = tools.preview_order(phone, [{"product_id": "p1", "quantity": 1}], "Ayesha", GOOD, future())
+    assert r["ok"]
+    db.add_message(phone, "shop", "Aap ka order summary neeche hai. Confirm kar dein?")
+
+
+def test_confirm_saves_the_order_in_code_even_if_the_ai_would_skip_it(monkeypatch):
+    phone = "03009990300"
+    _draft(phone)
+    say(phone, "Haan, confirm")
+    monkeypatch.setattr(ai, "MOCK", False)
+
+    def boom(*a, **k):
+        raise AssertionError("the AI must not be called to save a plain yes")
+
+    monkeypatch.setattr(ai, "chat_with_tools", boom)
+    out = agent.run_agent(phone, "roman_urdu", "order")
+    assert out["tools_used"] == ["confirm_order"] and out["order_summary"] is None
+    assert len(db.list_orders()) == 1 and "ord_" in out["reply"] and out["reply"].count("Shukriya") == 1
+
+
+def test_second_confirm_does_not_build_a_new_summary(monkeypatch):
+    phone = "03009990301"
+    _draft(phone)
+    say(phone, "Haan, confirm")
+    monkeypatch.setattr(ai, "MOCK", False)
+    first = agent.run_agent(phone, "roman_urdu", "order")
+    db.add_message(phone, "shop", first["reply"])
+    say(phone, "Haan, confirm")
+    again = agent.run_agent(phone, "roman_urdu", "order")
+    assert "pehle hi confirm" in again["reply"] and len(db.list_orders()) == 1 and again["order_summary"] is None
+
+
+@pytest.mark.parametrize("text", ["ji time change kar dein", "haan lekin address badal do", "ok 7 baje kar dein", "theek hai? kitna hoga"])
+def test_a_change_request_is_not_taken_as_confirm(text):
+    phone = "03009990302"
+    _draft(phone)
+    say(phone, text)
+    assert agent.confirm_in_code(phone, "roman_urdu") is None and len(db.list_orders()) == 0
+
+
+def test_conditional_sentences_are_not_false_order_claims():
+    phone = "03009990303"
+    ok = "Order confirm hone ke baad aap ko order number mil jayega."
+    assert agent.reply_problems(phone, ok, [], [], "roman_urdu") == []
