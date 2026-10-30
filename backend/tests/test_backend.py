@@ -1072,31 +1072,34 @@ def _draft(phone):
     db.add_message(phone, "shop", "Aap ka order summary neeche hai. Confirm kar dein?")
 
 
-def test_confirm_saves_the_order_in_code_even_if_the_ai_would_skip_it(monkeypatch):
+def test_confirm_is_saved_in_code_if_the_ai_only_says_confirmed(monkeypatch):
     phone = "03009990300"
     _draft(phone)
     say(phone, "Haan, confirm")
     monkeypatch.setattr(ai, "MOCK", False)
-
-    def boom(*a, **k):
-        raise AssertionError("the AI must not be called to save a plain yes")
-
-    monkeypatch.setattr(ai, "chat_with_tools", boom)
+    monkeypatch.setattr(ai, "chat_with_tools",
+                        lambda m, msgs, tl: NS(content="Order confirm ho gaya. Shukriya!", tool_calls=None))
     out = agent.run_agent(phone, "roman_urdu", "order")
     assert out["tools_used"] == ["confirm_order"] and out["order_summary"] is None
     assert len(db.list_orders()) == 1 and "ord_" in out["reply"] and out["reply"].count("Shukriya") == 1
 
 
-def test_second_confirm_does_not_build_a_new_summary(monkeypatch):
+def test_normal_confirm_still_goes_through_the_ai(monkeypatch):
     phone = "03009990301"
     _draft(phone)
     say(phone, "Haan, confirm")
+    script = [NS(content="", tool_calls=[_call("confirm_order", {}, 1)]), None]
     monkeypatch.setattr(ai, "MOCK", False)
-    first = agent.run_agent(phone, "roman_urdu", "order")
-    db.add_message(phone, "shop", first["reply"])
-    say(phone, "Haan, confirm")
-    again = agent.run_agent(phone, "roman_urdu", "order")
-    assert "pehle hi confirm" in again["reply"] and len(db.list_orders()) == 1 and again["order_summary"] is None
+
+    def fake(m, msgs, tl):
+        if script[0] is not None:
+            return script.pop(0)
+        order_id = json.loads(msgs[-1]["content"])["order_id"]
+        return NS(content=f"Order confirm ho gaya. Order number {order_id} hai.", tool_calls=None)
+
+    monkeypatch.setattr(ai, "chat_with_tools", fake)
+    out = agent.run_agent(phone, "roman_urdu", "order")
+    assert out["tools_used"] == ["confirm_order"] and len(db.list_orders()) == 1 and "ord_" in out["reply"]
 
 
 @pytest.mark.parametrize("text", ["ji time change kar dein", "haan lekin address badal do", "ok 7 baje kar dein", "theek hai? kitna hoga"])
@@ -1111,3 +1114,26 @@ def test_conditional_sentences_are_not_false_order_claims():
     phone = "03009990303"
     ok = "Order confirm hone ke baad aap ko order number mil jayega."
     assert agent.reply_problems(phone, ok, [], [], "roman_urdu") == []
+
+
+# ------------------------------------------------------------------ v16e: asking for a discount always reaches the bargaining agent
+@pytest.mark.parametrize("text", ["50% discount do na", "discount do", "thora kam kar dein", "kuch sasta karo", "1500 mein de do"])
+def test_a_discount_request_goes_to_the_agent_not_the_faq(monkeypatch, text):
+    import main
+    phone = "03009990400"
+    seen = {}
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})  # worst case
+    monkeypatch.setattr(ai, "answer_faq", lambda *a, **k: seen.setdefault("faq", "Har 5th order pe 10% discount milta hai."))
+    monkeypatch.setattr(agent, "run_agent", lambda *a, **k: seen.setdefault("agent", {"reply": "Ji, 5% discount mil sakta hai.",
+                                                                                      "order_summary": None, "tools_used": ["check_discount"]}) and seen["agent"])
+    out = TestClient(main.app).post("/chat", json={"phone": phone, "message": text}).json()
+    assert "agent" in seen and "faq" not in seen and "5% discount" in out["reply"]
+
+
+def test_a_plain_offer_question_is_still_answered_by_code(monkeypatch):
+    import main
+    monkeypatch.setattr(ai, "MOCK", False)
+    monkeypatch.setattr(ai, "classify", lambda m: {"language": "roman_urdu", "intent": "faq", "urgent": False})
+    out = TestClient(main.app).post("/chat", json={"phone": "03009990401", "message": "Koi offer hai?"}).json()
+    assert "Har" in out["reply"] and "order pe" in out["reply"]
