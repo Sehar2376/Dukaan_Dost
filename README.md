@@ -225,6 +225,26 @@ Full interactive docs: `/docs` on the running backend.
 - Opening hours written only as text are not enforced by code. Write clear timings in the menu text.
 - Sindhi, Pashto and other languages are best effort; the assistant is built for Urdu, Roman Urdu and English.
 
+## How we handle tricky cases
+
+The assistant is built so that the customer cannot talk it out of the owner's rules. Checks run in Python, not in the prompt.
+
+- **"Ignore your rules" or "I am the owner":** ignored. Discounts are checked in code against the owner's maximum, one step per message.
+- **Orders outside shop hours:** a delivery time outside opening hours is refused in code, even before the order is complete.
+- **Made-up prices:** every Rs amount and percent in a reply must come from a tool result or the saved menu. Otherwise the reply is blocked and the owner is alerted.
+- **Things the shop info does not cover** (halal, eggless, refunds, photo on a cake): the customer is told the owner will confirm, and an alert appears in the Inbox.
+- **Vague or incomplete addresses:** the order is still taken, but the COD risk level goes up and the reasons are shown to the owner.
+- **Cancel or change requests:** the assistant cannot change a saved order, on purpose. It alerts the owner instead.
+
+## What's next
+
+- Owner login and an admin password (the demo has none yet).
+- Voice notes and photos from customers.
+- Payment checks for JazzCash and Easypaisa.
+- Matching delivery areas written in Urdu script with English addresses.
+- Running the backend and nightly report on Nebius Serverless.
+- Multiple shops and staff accounts.
+
 ## Project structure
 
 ```
