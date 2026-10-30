@@ -19,10 +19,13 @@
   Nebius x NVIDIA Global AI Hackathon · Track: <b>Best Apps and Agents</b> · License: MIT
 </p>
 
-<!-- Screenshots: on GitHub, edit this file, select a SHOT word and paste (Ctrl+V) a screenshot over it. -->
-| Customer chat (Roman Urdu + bargaining) | Owner dashboard | AI routing and cost |
+| Owner dashboard | Customer chat (shop hours checked in code) | Orders with COD risk and reasons |
 | --- | --- | --- |
-| SHOT-1 | SHOT-2 | SHOT-3 |
+| <img src="docs/screenshots/01-overview.jpg" alt="Owner dashboard: orders, sales, profit and alerts" width="260"> | <img src="docs/screenshots/02-customer-chat.jpg" alt="Customer chat showing which Nemotron model answered" width="260"> | <img src="docs/screenshots/03-orders-risk-check.jpg" alt="Orders with a cash-on-delivery risk level and reasons" width="260"> |
+
+| Market prices (Tavily + Nemotron) | AI usage and model routing | Settings: menu and stock |
+| --- | --- | --- |
+| <img src="docs/screenshots/04-market-prices-tavily.jpg" alt="Market price check" width="260"> | <img src="docs/screenshots/05-ai-usage-model-routing.jpg" alt="Smart model routing and cost saving" width="260"> | <img src="docs/screenshots/06-settings-menu-stock.jpg" alt="Current menu with sold-out buttons" width="260"> |
 
 ---
 
@@ -43,16 +46,16 @@ Most WhatsApp bots are English FAQ menus or a general chatbot with a prompt. Duk
 
 ## Try it in 2 minutes
 
-1. Open the live demo (link in our Devpost submission).
-2. On **Overview**, click **Load sample shop**. This loads *Sweet Crumbs Bakery*: a made-up Karachi home bakery with 20 customers and about 3 months of orders, all labelled demo data.
-3. Open **Customer chat** and type as a customer:
-   - `Assalam o alaikum, 1kg chocolate cake kitne ka hai?`
-   - `Thora discount ho jaye? 2 cake lun gi`
-   - `Theek hai, order kar dein. Gulshan delivery`
-4. Open **Orders** as the owner: the new order is there with its cash-on-delivery risk level and the reasons.
-5. Open **Insights** for daily and monthly profit, and ask the AI advisor for this month's tips.
+1. Open the live demo (link in our Devpost submission). No login is needed.
+2. On **Overview**, follow the three getting-started steps. The sample shop, *Sweet Crumbs Bakery* (a made-up Karachi home bakery with 20 customers and about 3 months of orders, all labelled demo data), is already loaded. **Settings → Restore sample menu** brings it back at any time.
+3. Open **Customer chat**, click **New customer**, and type as a customer (the English meaning is in brackets):
+   - `Chocolate cake kitne ka hai?` (How much is the chocolate cake?)
+   - `Thora kam kar dein` (Please reduce it a little). It offers 5%. Then `Aur kam?` (Even less?). It offers 10%, the owner's maximum, and stops there.
+   - `1kg chocolate cake parson shaam 6 baje chahiye` (I need a 1kg chocolate cake the day after tomorrow at 6 pm). It asks for your name, full address and payment. Press **Confirm** to get an order number.
+4. Open **Orders** as the owner: the new order is there with its cash-on-delivery risk level and the reasons. Open **Inbox** to see alerts and to take over a chat.
+5. Open **Insights** for sales, the AI business advisor, and market prices.
 
-> The backend runs on a free plan and may take a few seconds to wake up on the first request.
+> Each browser gets its own customer number. To protect our free credits, the demo allows 40 messages per customer and 500 messages in total per day. The backend runs on a free plan and may take a few seconds to wake up on the first request.
 
 ## The problem
 
@@ -73,8 +76,11 @@ Customers write in a mix of Roman Urdu, Urdu and English, and they expect to bar
 - **Takes orders and bookings** through a tool-calling agent.
 - **Bargains safely.** The model can only offer discounts that Python checks against the owner's limits, so a customer can't talk it into a bigger discount.
 - **Flags risky COD orders** with plain reasons, such as a vague address, a new customer, a large first order, or past cancellations.
-- **Hands off to the owner** for complaints, urgent or large orders, and questions it can't answer. The owner can take over a chat from the Inbox.
-- **Remembers repeat customers** and their addresses.
+- **Hands off to the owner** for complaints, urgent or large orders, and questions it can't answer. The owner can take over a chat from the Inbox and hand it back to the assistant.
+- **Never invents.** If the shop info doesn't say (eggless, refund, halal and so on), it tells the customer the owner will confirm, and puts an alert in the Inbox in plain words.
+- **Honest orders.** An order is saved only after the customer presses Confirm, and the reply shows the real order number.
+- **Remembers repeat customers** and their addresses, and gives the loyalty reward.
+- **Stock in one tap.** In **Settings**, each menu item has a **Mark sold out** button. Customers are told right away and offered what is in stock.
 - **Owner insights:** daily and monthly sales, profit and top products, plus monthly advice from Nemotron 3 Ultra.
 - **Market price check (Tavily):** "What do other shops charge for this?" Web search, then Nemotron Super reads the prices, then Python compares.
 - **5-minute setup:** the owner pastes their menu as plain text and Nemotron Super turns it into products and prices.
@@ -87,7 +93,7 @@ All AI calls go through the **Nebius Token Factory** OpenAI-compatible API. We r
 | --- | --- | --- |
 | **Nemotron 3 Nano** (30B-A3B) | Every message: language, intent and urgency detection; FAQ replies; short summaries | Fast and cheap enough to run on every message |
 | **Nemotron 3 Super** (120B-A12B) | Tool-calling agent for orders, bookings and bargaining (max 6 steps); reading a pasted menu; reading prices out of Tavily results | Reliable multi-step tool use |
-| **Nemotron 3 Ultra** (550B-A55B) | Monthly business advisor, only when the owner asks; the answer is cached | Deep reasoning over a month of numbers; rare call, so it costs about a cent |
+| **Nemotron 3 Ultra** (550B-A55B) | Monthly business advisor, only when the owner asks; the answer is cached | Deep reasoning over a month of numbers; rare call, so the cost stays small |
 
 **See the routing live:** in **Customer chat**, every reply shows which model handled it (for example *Nemotron Nano → Nemotron Super*) and what it understood. These labels are for the demo; customers on WhatsApp only see the replies.
 
@@ -99,7 +105,7 @@ All AI calls go through the **Nebius Token Factory** OpenAI-compatible API. We r
 - Ultra is called only on demand and cached;
 - a $0 **practice mode** (no key needed) uses the same tools with simple rules, for testing.
 
-**Real cost so far:** one month of building and testing (26 Sep – 26 Oct 2026) cost about **$0.15** on Nebius Token Factory, according to our Nebius billing page. Nano handles most messages, so it cost about $0.01; Ultra is called rarely and cached, so it cost under $0.01.
+**Real cost:** the app counts every call (**Settings → AI and usage**). On 29 Oct, a day of heavy testing with 124 messages, the estimated cost was **$0.28**: Nano $0.01, Super $0.27, Ultra $0. Doing the same work with Ultra for everything would have cost about **$1.09**, so model routing saved about **74%**. The estimated spend from 25 to 29 Oct, including our heaviest testing day, was about **$1.17** in total.
 
 ## Architecture
 
@@ -166,7 +172,7 @@ npm run dev
 ```
 Open http://localhost:5173.
 
-**Tests:** `pytest -q` in `backend` runs 142 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
+**Tests:** `pytest -q` in `backend` runs 148 offline tests with a fake Nemotron (no key needed). Classifier accuracy check against labelled messages: `python test_classify.py` (needs a key).
 
 ## Settings
 
@@ -210,7 +216,14 @@ Full interactive docs: `/docs` on the running backend.
 - WhatsApp needs a Twilio account; the Twilio sandbox only works for numbers that join it first.
 - If Nemotron 3 Ultra isn't available in a region, the advisor falls back to Nemotron 3 Super.
 - Roman Urdu spelling varies a lot ("kitne", "kitnay", "ktny"); unusual spellings can still be misread. Unclear messages go to the owner.
-- COD risk uses simple, explainable rules, not a trained model.
+- COD risk uses simple, explainable rules, not a trained model. It is per phone number, so a new SIM looks like a new customer.
+- Delivery areas saved in Urdu script (for example گلشن) do not match an address written in English letters. Write delivery areas in English letters in Settings for now.
+- Customers can't send images or voice notes yet; the assistant asks them to type.
+- Payments (JazzCash, Easypaisa) are not verified automatically; the owner checks them.
+- The assistant can't cancel or change a saved order, on purpose; it alerts the owner, who changes it in **Orders**.
+- Changes saved in Settings can take a few minutes to reach the chat (saved data is reused to protect Firebase's free quota).
+- Opening hours written only as text are not enforced by code. Write clear timings in the menu text.
+- Sindhi, Pashto and other languages are best effort; the assistant is built for Urdu, Roman Urdu and English.
 
 ## Project structure
 
