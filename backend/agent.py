@@ -32,7 +32,7 @@ NARRATION = re.compile(
     r"i will (?:get|call|fetch|search|check|use|run)|fetch(?:ing)?|get products|get_products|get_customer|"
     r"preview_order|preview order|confirm_order|check_discount|flag_owner|create_booking|flag(?:ged)? (?:the )?owner|tool calls?|"
     r"main unse poochta|main unse poochti|the customer (?:has|hasn't|wants|said)|customer abhi tak|"
-    r"let's preview|preview with|proceeding normally|system says|need customer data|call now|check discount|ask details)\b",
+    r"reply in roman urdu|let's preview|preview with|proceeding normally|system says|need customer data|call now|check discount|ask details)\b",
     re.IGNORECASE)
 
 
@@ -433,13 +433,6 @@ CONFIRMED_REPLY = {
 }
 
 
-ALREADY_CONFIRMED = {
-    "roman_urdu": "Aap ka order pehle hi confirm ho chuka hai. Order number {id}.",
-    "urdu": "آپ کا آرڈر پہلے ہی کنفرم ہو چکا ہے۔ آرڈر نمبر {id}۔",
-    "english": "Your order is already confirmed. Order number {id}.",
-}
-
-
 CHANGE_WORDS = re.compile(r"\b(change|badal|badlo|tabdeel|time|address|name|naam|quantity|aur|add|replace|kam|discount|"
                           r"instead|bajay|lekin|but|wait|ruko|\d+)\b|\?", re.IGNORECASE)
 
@@ -454,18 +447,13 @@ def plain_yes(phone: str) -> bool:
 
 
 def confirm_in_code(phone: str, language: str) -> dict | None:
-    """The customer clearly said yes to a summary we already showed: save it here. The AI is not involved, so it
-    cannot re-send the summary or promise something it did not do."""
+    """Safety net only: the AI said "order confirmed" without saving, but the customer did clearly say yes to the
+    summary we showed. Save it here instead of sending the AI back to rebuild the summary."""
     conv = db.get_conversation(phone)
     draft = conv.get("draft_order")
     if not plain_yes(phone):
         return None
-    if not draft:  # a second "confirm" right after the order was saved: say so, never build a new summary
-        shop_msgs = [m["text"] for m in conv["messages"] if m["role"] != "customer"]
-        found = re.search(r"\bord_\w+", shop_msgs[-1]) if shop_msgs else None
-        if found:
-            return {"reply": ALREADY_CONFIRMED.get(language, ALREADY_CONFIRMED["roman_urdu"]).format(id=found.group(0)),
-                    "tools_used": [], "order_summary": None}
+    if not draft:
         return None
     last_shop = [m["text"] for m in conv["messages"] if m["role"] != "customer"]
     if not last_shop or not re.search(r"confirm|summary|کنفرم", last_shop[-1], re.IGNORECASE):
@@ -485,9 +473,6 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
 
         return practice.run(phone)
 
-    saved = confirm_in_code(phone, language)
-    if saved:
-        return saved
     messages = build_messages(phone, language)
     used, summary, nudged, discount_nudged, guarded, time_nudged = [], None, 0, False, False, False
     results = []  # every tool result this turn: numbers in them are allowed in the reply
@@ -522,6 +507,10 @@ def run_agent(phone: str, language: str, intent: str = "") -> dict:
             if not reply:
                 break  # still only narration: alert the owner below instead of sending it
             problems = reply_problems(phone, reply, used, results, language)
+            if FALSE_ORDER in problems:  # said "confirmed" but did not save: if the customer really said yes, save it
+                saved = confirm_in_code(phone, language)
+                if saved:
+                    return saved
             if problems and not guarded:  # made-up price, false promise or style slip: ask it to fix the reply, once
                 guarded = True
                 messages.append({"role": "assistant", "content": reply})

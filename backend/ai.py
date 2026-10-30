@@ -271,7 +271,7 @@ def answer_faq(message: str, language: str, shop_info: str, shop_name: str, city
                    + owner_said)
         shop_info = shop_info + "\nOWNER SAID IN THIS CHAT: " + owner_said
     safe = OWNER_WILL_CONFIRM.get(language, OWNER_WILL_CONFIRM["roman_urdu"]) + " [NEEDS_OWNER]"
-    raw = chat(NANO, system, message, temperature=0.2, max_tokens=700, timeout=15)
+    raw = chat(NANO, system, message, temperature=0.2, max_tokens=450, timeout=15)
     try:
         data = extract_json(raw)
         if not isinstance(data, dict) or not data.get("reply"):

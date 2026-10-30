@@ -228,7 +228,8 @@ def _handle(phone: str, message: str) -> ChatOut:
 
     try:
         if (info["intent"] in AGENT_INTENTS or conv.get("draft_order") or _mid_order(conv, info["intent"])
-                or looks_like_confirm(message) or ORDER_DETAIL.search(message) or names_a_product(message)):
+                or looks_like_confirm(message) or ORDER_DETAIL.search(message) or names_a_product(message)
+                or agent.asked_for_discount(phone)):  # "discount do", "thora kam kar dein": always the bargaining agent
             route.append("super")
             result = agent.run_agent(phone, info["language"], info["intent"])  # Nemotron Super + tools
             c = db.get_conversation(phone)
